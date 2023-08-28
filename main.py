@@ -21,18 +21,19 @@ import warnings
 warnings.filterwarnings('ignore')
 
 class Calculator():
-    def __init__(self, cal_type, penalty=1):
+    def __init__(self, cal_type, penalty=1, n_classes=9):
         self.cal_type = cal_type
         self.penalty = penalty
+        self.interval_length = 12 // n_classes
     def calculate(self, probs):
         if self.cal_type == "Expectation":
             return self.expectation(probs)
         elif self.cal_type == "Bernoulli":
             return self.bernoulli(probs)
     def expectation(self, probs):
-        return torch.sum(torch.tensor(range(1,10)).to(probs.device)*probs, 1)
+        return torch.sum(torch.tensor(range(1,10,self.interval_length)).to(probs.device)*probs, 1)
     def bernoulli(self, probs):
-        return torch.sum(torch.tensor(range(1,10)).to(probs.device)*probs - self.penalty*(1-probs)*probs, 1)
+        return torch.sum(torch.tensor(range(1,10,self.interval_length)).to(probs.device)*probs - self.penalty*(1-probs)*probs, 1)
     
 def optimizer_to(optim, device):
     for param in optim.state.values():
@@ -77,8 +78,8 @@ def train_cv(config):
 
     results = [0, 0, 0, 0, 0]
     
-    kfold = get_5fold(LABEL_PATH)
-    cal = Calculator(cal_type=config["formula"])
+    kfold = get_5fold(LABEL_PATH, file_length=config["file_length"])
+    cal = Calculator(cal_type=config["formula"], n_classes=config["n_classes"])
 
     if config["basemean"]:
         dataset = DEAP(data_dir=W_BASEMEAN_DATA_PATH, label_path=LABEL_PATH, target=config["target"])
@@ -103,7 +104,7 @@ def train_cv(config):
 
         LOSS = Custom_Loss(device=config["device"], alpha=config["alpha"], dist_type=config["weight"])
 
-        model = EmoticonNet(device=config["device"])
+        model = EmoticonNet(device=config["device"], n_classes=config["n_classes"])
         if config["optimizer"] == "SGD":
             optimizer = SGD(model.parameters(), lr=1e-4, momentum=0.9)
         elif config["optimizer"] == "Adam":
@@ -241,8 +242,8 @@ def test_cv(config):
     results = [0, 0, 0, 0, 0]
     weight_epochs = config["test_weight"].split(" ")
     
-    kfold = get_5fold(LABEL_PATH)
-    cal = Calculator(cal_type=config["formula"])
+    kfold = get_5fold(LABEL_PATH, file_length=config["file_length"])
+    cal = Calculator(cal_type=config["formula"], n_classes=config["n_classes"])
 
     if config["basemean"]:
         dataset = DEAP(data_dir=W_BASEMEAN_DATA_PATH, label_path=LABEL_PATH, target=config["target"])
@@ -257,7 +258,7 @@ def test_cv(config):
         print(f'\nTraining for fold {fold+1}')
 
         LOSS = Custom_Loss(device=config["device"], alpha=config["alpha"], dist_type=config["weight"])
-        model = EmoticonNet(device=config["device"])
+        model = EmoticonNet(device=config["device"], n_classes=config["n_classes"])
         ep = weight_epochs[fold]
         model.load_state_dict(torch.load(os.path.join(WEIGHTS_PATH, config["output_dir"], f'ALPHA_{alpha}', f'fold_{fold+1}', f'best_model_{ep}.pt')))
 
@@ -331,11 +332,13 @@ if __name__=="__main__":
     parser.add_argument('--formula', type=str, default='Expectation', choices=['Expectation', 'Bernoulli'], help='Select the Calculator Type')
     parser.add_argument('--weight', type=str, default='None', choices=['None', 'Absolute', 'Square'], help='Select the Weight Type')
     parser.add_argument('--alpha', type=int, default=1, help='Select the weight of CE')
+    parser.add_argument('--n_classes', type=int, default=9, choices=[9, 5, 3], help='Select the number of intervals')
 
     # Data Options
     parser.add_argument('--target', type=str, default='valence', choices=['valence', 'arousal'], help='Select the Target Type')
     parser.add_argument('--dataset', type=str, default='DEAP', choices=['DEAP'], help='Select a Dataset')
     parser.add_argument('--basemean', type=str2bool, default=False, help='Select whether to use Basemean')
+    parser.add_argument('--file_length', type=int, default=10, help='Select the Signal Length')
 
     # Save Options
     parser.add_argument('--output_dir', type=str, default='TEST', help='Select a Dataset')
@@ -356,11 +359,13 @@ if __name__=="__main__":
         "formula": args.formula,
         "weight": args.weight,
         "alpha": args.alpha,
+        "n_classes": args.n_classes,
 
         # dataset
         "dataset": args.dataset,
         "target": args.target,
         "basemean": args.basemean,
+        "file_length": args.file_length,
 
         # Test Model
         "test_weights": args.test_weights,
@@ -383,7 +388,9 @@ if __name__=="__main__":
     print("--Optimizer:", args.optimizer)
     print("--Learning Rate:", args.learning_rate)
     print("--GPU/CPU:", args.device)
+    print("--# of Intervals:", args.n_classes)
     print("--Dataset:", args.dataset)
+    print("--File Length:", args.file_length)
     print("--BaseMean:", args.basemean)
     print("--Formula:", args.formula)
     print("--Weight Type:", args.weight)
@@ -402,7 +409,9 @@ if __name__=="__main__":
         print("--Optimizer:", args.optimizer)
         print("--Learning Rate:", args.learning_rate)
         print("--GPU/CPU:", args.device)
+        print("--# of Intervals:", args.n_classes)
         print("--Dataset:", args.dataset)
+        print("--File Length:", args.file_length)
         print("--BaseMean:", args.basemean)
         print("--Formula:", args.formula)
         print("--Weight Type:", args.weight)
