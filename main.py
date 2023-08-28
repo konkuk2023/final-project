@@ -81,10 +81,16 @@ def train_cv(config):
     kfold = get_5fold(LABEL_PATH, file_length=config["file_length"])
     cal = Calculator(cal_type=config["formula"], n_classes=config["n_classes"])
 
-    if config["basemean"]:
-        dataset = DEAP(data_dir=W_BASEMEAN_DATA_PATH, label_path=LABEL_PATH, target=config["target"])
-    else:
-        dataset = DEAP(data_dir=WO_BASEMEAN_DATA_PATH, label_path=LABEL_PATH, target=config["target"])
+    if config["feature_type"]=="EEG":
+        if config["basemean"]:
+            dataset = DEAP(data_dir=W_BASEMEAN_DATA_PATH, label_path=LABEL_PATH, target=config["target"], feature_type="EEG")
+        else:
+            dataset = DEAP(data_dir=WO_BASEMEAN_DATA_PATH, label_path=LABEL_PATH, target=config["target"], feature_type="EEG")
+    elif config["feature_type"]=="DE":
+        if config["basemean"]:
+            dataset = DEAP(data_dir=DE_W_BASEMEAN_DATA_PATH, label_path=LABEL_PATH, target=config["target"], feature_type="DE")
+        else:
+            dataset = DEAP(data_dir=DE_WO_BASEMEAN_DATA_PATH, label_path=LABEL_PATH, target=config["target"], feature_type="DE")
 
     # Devide folds
     for fold, (train_idx, test_idx) in enumerate(kfold):
@@ -245,10 +251,16 @@ def test_cv(config):
     kfold = get_5fold(LABEL_PATH, file_length=config["file_length"])
     cal = Calculator(cal_type=config["formula"], n_classes=config["n_classes"])
 
-    if config["basemean"]:
-        dataset = DEAP(data_dir=W_BASEMEAN_DATA_PATH, label_path=LABEL_PATH, target=config["target"])
-    else:
-        dataset = DEAP(data_dir=WO_BASEMEAN_DATA_PATH, label_path=LABEL_PATH, target=config["target"])
+    if config["feature_type"]=="EEG":
+        if config["basemean"]:
+            dataset = DEAP(data_dir=W_BASEMEAN_DATA_PATH, label_path=LABEL_PATH, target=config["target"], feature_type="EEG")
+        else:
+            dataset = DEAP(data_dir=WO_BASEMEAN_DATA_PATH, label_path=LABEL_PATH, target=config["target"], feature_type="EEG")
+    elif config["feature_type"]=="DE":
+        if config["basemean"]:
+            dataset = DEAP(data_dir=DE_W_BASEMEAN_DATA_PATH, label_path=LABEL_PATH, target=config["target"], feature_type="DE")
+        else:
+            dataset = DEAP(data_dir=DE_WO_BASEMEAN_DATA_PATH, label_path=LABEL_PATH, target=config["target"], feature_type="DE")
 
     # Devide folds
     for fold, (_, test_idx) in enumerate(kfold):
@@ -337,6 +349,7 @@ if __name__=="__main__":
     # Data Options
     parser.add_argument('--target', type=str, default='valence', choices=['valence', 'arousal'], help='Select the Target Type')
     parser.add_argument('--dataset', type=str, default='DEAP', choices=['DEAP'], help='Select a Dataset')
+    parser.add_argument('--feature', type=str, default='EEG', choices=['EEG', 'DE'], help='Select a Feature Type')
     parser.add_argument('--basemean', type=str2bool, default=False, help='Select whether to use Basemean')
     parser.add_argument('--file_length', type=int, default=10, help='Select the Signal Length')
 
@@ -366,6 +379,7 @@ if __name__=="__main__":
         "target": args.target,
         "basemean": args.basemean,
         "file_length": args.file_length,
+        "feature_type": args.feature,
 
         # Test Model
         "test_weights": args.test_weights,
@@ -390,6 +404,7 @@ if __name__=="__main__":
     print("--GPU/CPU:", args.device)
     print("--# of Intervals:", args.n_classes)
     print("--Dataset:", args.dataset)
+    print("--Feature:", args.feature)
     print("--File Length:", args.file_length)
     print("--BaseMean:", args.basemean)
     print("--Formula:", args.formula)
@@ -411,6 +426,7 @@ if __name__=="__main__":
         print("--GPU/CPU:", args.device)
         print("--# of Intervals:", args.n_classes)
         print("--Dataset:", args.dataset)
+        print("--Feature:", args.feature)
         print("--File Length:", args.file_length)
         print("--BaseMean:", args.basemean)
         print("--Formula:", args.formula)
