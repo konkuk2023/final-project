@@ -63,8 +63,12 @@ class DEAP(Dataset):
         self.data_dir = data_dir
         self.label = pd.read_csv(label_path)
         self.target = target
-        self.feature_type = feature_type
         self.denominator = 12 // n_classes  # 9->1 / 5->2 / 3->4
+
+        if feature_type=="EEG":
+            self.sample_rate = 128
+        elif feature_type=="DE":
+            self.sample_rate = 1
 
         self.file_length = file_length
         self.num_division = 60 // file_length
@@ -74,17 +78,12 @@ class DEAP(Dataset):
 
     def __getitem__(self, idx):
 
-        if self.feature_type=="EEG":
-            sample_rate = 128
-        elif self.feature_type=="DE":
-            sample_rate = 1
-
         trial_idx = idx // self.num_division
-        data_idx = (idx % self.num_division) * self.file_length * sample_rate
+        data_idx = (idx % self.num_division) * self.file_length * self.sample_rate
 
         name = self.label.iloc[trial_idx, 0]
         data_path = os.path.join(self.data_dir, name)+'_win_128.pt'
-        eeg_signal = torch.load(data_path)[data_idx:data_idx+self.file_length*sample_rate]
+        eeg_signal = torch.load(data_path)[data_idx:data_idx+self.file_length*self.sample_rate]
 
         score = self.label.loc[trial_idx, self.target]
 

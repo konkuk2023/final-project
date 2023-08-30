@@ -82,11 +82,15 @@ def train_cv(config):
     cal = Calculator(cal_type=config["formula"], n_classes=config["n_classes"])
 
     if config["feature_type"]=="EEG":
+        input_length = int(7680 / (60//config["file_length"]))
+        input_image = torch.zeros(1, input_length, 1, 9, 9)
         if config["basemean"]:
             dataset = DEAP(data_dir=W_BASEMEAN_DATA_PATH, label_path=LABEL_PATH, target=config["target"], feature_type="EEG")
         else:
             dataset = DEAP(data_dir=WO_BASEMEAN_DATA_PATH, label_path=LABEL_PATH, target=config["target"], feature_type="EEG")
     elif config["feature_type"]=="DE":
+        input_length = int(60 / (60//config["file_length"]))
+        input_image = torch.zeros(1, input_length, 1, 9, 9)
         if config["basemean"]:
             dataset = DEAP(data_dir=DE_W_BASEMEAN_DATA_PATH, label_path=LABEL_PATH, target=config["target"], feature_type="DE")
         else:
@@ -97,10 +101,10 @@ def train_cv(config):
         train_subsampler = torch.utils.data.SubsetRandomSampler(train_idx)
         test_subsampler = torch.utils.data.SubsetRandomSampler(test_idx)
 
-        trainloader = torch.utils.data.DataLoader(dataset, num_workers=4, batch_size=config["batch"], sampler=train_subsampler) 
+        trainloader = torch.utils.data.DataLoader(dataset, num_workers=8, batch_size=config["batch"], sampler=train_subsampler) 
         testloader = torch.utils.data.DataLoader(dataset, num_workers=4, batch_size=config["batch"], sampler=test_subsampler) 
 
-        save_path = os.path.join(WEIGHTS_PATH, config["output_dir"], f'ALPHA_{alpha}', f'fold_{fold+1}')
+        save_path = os.path.join(WEIGHTS_PATH, str(config["file_length"])+'s', config["output_dir"], f'ALPHA_{alpha}', f'fold_{fold+1}')
         create_directory(save_path)
 
         f = open(os.path.join(save_path, 'output.csv'), 'w')
@@ -110,7 +114,7 @@ def train_cv(config):
 
         LOSS = Custom_Loss(device=config["device"], alpha=config["alpha"], dist_type=config["weight"])
 
-        model = EmoticonNet(device=config["device"], n_classes=config["n_classes"])
+        model = EmoticonNet(device=config["device"], n_classes=config["n_classes"], input_image=input_image)
         if config["optimizer"] == "SGD":
             optimizer = SGD(model.parameters(), lr=1e-4, momentum=0.9)
         elif config["optimizer"] == "Adam":
@@ -330,7 +334,7 @@ def test_cv(config):
 
 if __name__=="__main__":
 
-    # python ./main.py --mode Train --dataset DEAP --epochs 500 --batch_size 8 --optimizer SGD --target valence --basemean True --alpha 1 --formula Expectation --weight None --device cuda:1 --output_dir TEST
+    # python ./main.py --mode Train --dataset DEAP --epochs 500 --batch_size 192 --optimizer SGD --target valence --basemean True --alpha 1 --n_classes 9 --file_length 10 --feature EEG --formula Expectation --weight None --device cuda:1 --output_dir TEST
 
     # Basic & Model Options
     parser  = argparse.ArgumentParser(description="Alzheimer's Disease Detection")
