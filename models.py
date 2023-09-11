@@ -25,7 +25,7 @@ class depthwise_separable_conv(nn.Module):
         return out
 
 class EmoticonNet(nn.Module):
-    def __init__(self, device='cpu', input_image=torch.zeros(1, 7680, 1, 9, 9), kernel=(5, 5), stride=1, padding=1, n_classes=9, n_units=128):
+    def __init__(self, device='cpu', input_image=torch.zeros(1, 7680, 1, 9, 9), kernel=(5, 5), stride=1, padding=1, n_classes=9, n_units=128, formula="Expectation"):
         """
         EmoticonNet
             - Input: Electroencephalogram Signals 
@@ -36,6 +36,7 @@ class EmoticonNet(nn.Module):
         super(EmoticonNet, self).__init__()
 
         self.device = device
+        self.formula = formula
         n_channel = input_image.shape[2]
         
         # EmoticonNet 2D ConvNet
@@ -60,6 +61,16 @@ class EmoticonNet(nn.Module):
         self.fc1 = nn.Linear(128, 128).to(self.device)
         self.fc2 = nn.Linear(128, n_classes).to(self.device)
         self.max = nn.Softmax().to(self.device)
+        self.sigmoid = nn.Sigmoid().to(self.device)
+
+        for m in self.modules():
+            if isinstance(m, nn.Conv2d):
+                nn.init.kaiming_normal_(m.weight.data)
+                m.bias.data.fill_(0)
+            elif isinstance(m, nn.Linear):
+                nn.init.kaiming_normal_(m.weight.data)
+                m.bias.data.fill_(0)
+
     
     def forward(self, x):
         tmp = x.reshape(x.shape[0]*x.shape[1], x.shape[2], x.shape[3], x.shape[4]).to(self.device)
@@ -74,7 +85,10 @@ class EmoticonNet(nn.Module):
         out = torch.mul(out, out1)
         out = F.elu(self.fc1(out))
         out = self.fc2(out)
-        out = self.max(out)
+        if self.formula in ["Expextation", "Bernoulli"]:
+            out = self.max(out)
+        else:
+            out = self.sigmoid(out)
 
         del temp_conv, out1
 

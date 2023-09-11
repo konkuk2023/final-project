@@ -74,6 +74,7 @@ def train_cv(config):
     alpha = config["alpha"]
     basemean = config["basemean"]
 
+
     torch.cuda.empty_cache()
 
     results = [0, 0, 0, 0, 0]
@@ -85,26 +86,27 @@ def train_cv(config):
         input_length = int(7680 / (60//config["file_length"]))
         input_image = torch.zeros(1, input_length, 1, 9, 9)
         if config["basemean"]:
-            dataset = DEAP(data_dir=W_BASEMEAN_DATA_PATH, label_path=LABEL_PATH, target=config["target"], feature_type="EEG")
+            dataset = DEAP(data_dir=W_BASEMEAN_DATA_PATH, label_path=LABEL_PATH, target=config["target"], file_length=config["file_length"], feature_type="EEG")
         else:
-            dataset = DEAP(data_dir=WO_BASEMEAN_DATA_PATH, label_path=LABEL_PATH, target=config["target"], feature_type="EEG")
+            dataset = DEAP(data_dir=WO_BASEMEAN_DATA_PATH, label_path=LABEL_PATH, target=config["target"], file_length=config["file_length"], feature_type="EEG")
     elif config["feature_type"]=="DE":
         input_length = int(60 / (60//config["file_length"]))
         input_image = torch.zeros(1, input_length, 1, 9, 9)
         if config["basemean"]:
-            dataset = DEAP(data_dir=DE_W_BASEMEAN_DATA_PATH, label_path=LABEL_PATH, target=config["target"], feature_type="DE")
+            dataset = DEAP(data_dir=DE_W_BASEMEAN_DATA_PATH, label_path=LABEL_PATH, target=config["target"], file_length=config["file_length"], feature_type="DE")
         else:
-            dataset = DEAP(data_dir=DE_WO_BASEMEAN_DATA_PATH, label_path=LABEL_PATH, target=config["target"], feature_type="DE")
+            dataset = DEAP(data_dir=DE_WO_BASEMEAN_DATA_PATH, label_path=LABEL_PATH, target=config["target"], file_length=config["file_length"], feature_type="DE")
 
     # Devide folds
     for fold, (train_idx, test_idx) in enumerate(kfold):
         train_subsampler = torch.utils.data.SubsetRandomSampler(train_idx)
         test_subsampler = torch.utils.data.SubsetRandomSampler(test_idx)
 
-        trainloader = torch.utils.data.DataLoader(dataset, num_workers=8, batch_size=config["batch"], sampler=train_subsampler) 
+        trainloader = torch.utils.data.DataLoader(dataset, num_workers=4, batch_size=config["batch"], sampler=train_subsampler) 
         testloader = torch.utils.data.DataLoader(dataset, num_workers=4, batch_size=config["batch"], sampler=test_subsampler) 
 
-        save_path = os.path.join(WEIGHTS_PATH, str(config["file_length"])+'s', config["output_dir"], f'ALPHA_{alpha}', f'fold_{fold+1}')
+        # save_path = os.path.join(WEIGHTS_PATH, config["target"], config["feature_type"], str(config["file_length"])+'s', config["output_dir"], f'ALPHA_{alpha}', f'fold_{fold+1}')
+        save_path = os.path.join(WEIGHTS_PATH, config["target"], 'TEST', str(config["file_length"])+'s', config["output_dir"], f'fold_{fold+1}')
         create_directory(save_path)
 
         f = open(os.path.join(save_path, 'output.csv'), 'w')
@@ -114,12 +116,13 @@ def train_cv(config):
 
         LOSS = Custom_Loss(device=config["device"], alpha=config["alpha"], dist_type=config["weight"])
 
-        model = EmoticonNet(device=config["device"], n_classes=config["n_classes"], input_image=input_image)
+        model = EmoticonNet(device=config["device"], n_classes=config["n_classes"], input_image=input_image, formula=config["formula"])
         if config["optimizer"] == "SGD":
-            optimizer = SGD(model.parameters(), lr=1e-4, momentum=0.9)
+            optimizer = SGD(model.parameters(), lr=config["learning_rate"], momentum=0.9)
         elif config["optimizer"] == "Adam":
-            optimizer = Adam(model.parameters(), lr=1e-4, betas=(0.5, 0.9))
-            # optimizer = AdamW(model.parameters(), lr=1e-4)
+            optimizer = Adam(model.parameters(), lr=config["learning_rate"], betas=config["betas"])
+        elif config["optimizer"] == "AdamW":
+            optimizer = AdamW(model.parameters(), lr=config["learning_rate"], betas=config["betas"], weight_decay=config["weight_decay"])
 
         for epoch in range(config["epochs"]):
             print(f"[INFO] Target:{target}||Formula:{formula}||Loss:{weight}||Alpha:{alpha}||BaseMean:{basemean}||Fold:{fold+1}")
@@ -134,6 +137,7 @@ def train_cv(config):
             num_data = 0
             # print("MEMORY USAGE 1:", round(torch.cuda.memory_allocated(1)/1024**3, 2), "GB")
             optimizer_to(optimizer, config['device'])
+            ## error
             for _, eeg, score, label_cls in tqdm(trainloader, desc=f"Epoch {epoch+1} / TRAIN", ncols=100, ascii=" =", leave=False):
                 # Batch size
                 num_batch = eeg.shape[0]
@@ -220,6 +224,7 @@ def train_cv(config):
                     best_mse_val = val_mse
                     best_ce_val = val_ce
                     best_loss_val = val_loss
+                    # torch.save(model.state_dict(), os.path.join(save_path, f'best_model_{epoch+1}.pt'))
                 else:
                     if val_rmse <= best_rmse_val:
                         best_rmse_val = val_rmse
@@ -227,10 +232,166 @@ def train_cv(config):
                         best_mse_val = val_mse
                         best_ce_val = val_ce
                         best_loss_val = val_loss
-                        torch.save(model.state_dict(), os.path.join(save_path, f'best_model_{epoch+1}.pt'))
+                        # torch.save(model.state_dict(), os.path.join(save_path, f'best_model_{epoch+1}.pt'))
                 print(f'\t[Validation] LOSS: {val_loss} | MSE: {val_mse} | CE: {val_ce} | RMSE: {val_rmse}\n\t[BEST] LOSS: {best_loss_val} | MSE: {best_mse_val} | CE: {best_ce_val} | RMSE: {best_rmse_val}')
-            f.write(f'{epoch+1},{train_loss},{train_mse},{train_ce},{val_loss},{val_mse},{val_ce},{val_rmse}\n')
+            f.write(f'{epoch+1},{train_loss},{train_mse},{train_ce},{train_rmse},{val_loss},{val_mse},{val_ce},{val_rmse}\n')
             del val_mse, val_ce, val_loss, val_rmse, train_mse, train_ce, train_loss, train_rmse
+            torch.cuda.empty_cache()
+        f.close()   
+        del optimizer, model, LOSS, trainloader, testloader, train_subsampler, test_subsampler
+        torch.cuda.empty_cache()
+        print(f"\nFold {fold+1}: {best_rmse_val}")
+    print(f"[Results]\nFold 1: {results[0]}\nFold 2: {results[1]}\nFold 3: {results[2]}\nFold 4: {results[3]}\nFold 5: {results[4]}")
+    print(f"Mean RMSE of 5 folds CV: {np.mean(results)}")
+
+def train_mse(config):
+    # Basic Informations
+    print("Train a model which uses only Mean Squared Error!")
+    target = config["target"]
+    basemean = config["basemean"]
+
+    torch.cuda.empty_cache()
+
+    results = [0, 0, 0, 0, 0]
+    
+    kfold = get_5fold(LABEL_PATH, file_length=config["file_length"])
+    SIGMOID = nn.Sigmoid()
+
+    if config["feature_type"]=="EEG":
+        input_length = int(7680 / (60//config["file_length"]))
+        input_image = torch.zeros(1, input_length, 1, 9, 9)
+        if config["basemean"]:
+            dataset = DEAP(data_dir=W_BASEMEAN_DATA_PATH, label_path=LABEL_PATH, target=config["target"], file_length=config["file_length"], feature_type="EEG")
+        else:
+            dataset = DEAP(data_dir=WO_BASEMEAN_DATA_PATH, label_path=LABEL_PATH, target=config["target"], file_length=config["file_length"], feature_type="EEG")
+    elif config["feature_type"]=="DE":
+        input_length = int(60 / (60//config["file_length"]))
+        input_image = torch.zeros(1, input_length, 1, 9, 9)
+        if config["basemean"]:
+            dataset = DEAP(data_dir=DE_W_BASEMEAN_DATA_PATH, label_path=LABEL_PATH, target=config["target"], file_length=config["file_length"], feature_type="DE")
+        else:
+            dataset = DEAP(data_dir=DE_WO_BASEMEAN_DATA_PATH, label_path=LABEL_PATH, target=config["target"], file_length=config["file_length"], feature_type="DE")
+
+    # Devide folds
+    for fold, (train_idx, test_idx) in enumerate(kfold):
+        train_subsampler = torch.utils.data.SubsetRandomSampler(train_idx)
+        test_subsampler = torch.utils.data.SubsetRandomSampler(test_idx)
+
+        trainloader = torch.utils.data.DataLoader(dataset, num_workers=4, batch_size=config["batch"], sampler=train_subsampler) 
+        testloader = torch.utils.data.DataLoader(dataset, num_workers=4, batch_size=config["batch"], sampler=test_subsampler) 
+
+        save_path = os.path.join(WEIGHTS_PATH, config["target"], config["feature_type"], str(config["file_length"])+'s', config["output_dir"], f'fold_{fold+1}')
+        create_directory(save_path)
+
+        f = open(os.path.join(save_path, 'output.csv'), 'w')
+        f.write('epoch,MSE,RMSE,v_MSE,v_RMSE\n')
+
+        print(f'\nTraining for fold {fold+1}')
+
+        LOSS = nn.MSELoss() # Mean Squared Error Loss
+        model = EmoticonNet(device=config["device"], n_classes=config["n_classes"], input_image=input_image, formula=config["formula"])
+        if config["optimizer"] == "SGD":
+            optimizer = SGD(model.parameters(), lr=config["learning_rate"], momentum=0.9)
+        elif config["optimizer"] == "Adam":
+            optimizer = Adam(model.parameters(), lr=config["learning_rate"], betas=config["betas"])
+        elif config["optimizer"] == "AdamW":
+            optimizer = AdamW(model.parameters(), lr=config["learning_rate"], betas=config["betas"], weight_decay=config["weight_decay"])
+
+        for epoch in range(config["epochs"]):
+            print(f"[INFO] Target:{target}||Loss:Mean Squared Error||BaseMean:{basemean}||Fold:{fold+1}")
+            torch.cuda.empty_cache()
+
+            model.train()
+
+            optimizer.zero_grad()
+            train_loss = 0
+            num_data = 0
+            optimizer_to(optimizer, config['device'])
+            ## error
+            for _, eeg, score, label_cls in tqdm(trainloader, desc=f"Epoch {epoch+1} / TRAIN", ncols=100, ascii=" =", leave=False):
+                # Batch size
+                num_batch = eeg.shape[0]
+                num_data += num_batch
+
+                true_points = torch.round(score).type("torch.FloatTensor").to(config["device"])
+                pred_probs = model(eeg.to(config["device"]))
+                pred_points = 8 * pred_probs + 1
+                # true_class = label_cls.type("torch.LongTensor").to(config["device"])
+
+                del score, eeg, label_cls
+                torch.cuda.empty_cache()
+
+                # Calculate Loss Function
+                loss = LOSS(pred_points, true_points)
+
+                del pred_probs, pred_points, true_points
+                torch.cuda.empty_cache()
+
+                train_loss += loss.item()*num_batch
+
+                # Weights Update
+                loss.backward(retain_graph = False)
+                optimizer.step()
+                optimizer.zero_grad()
+
+                del loss, num_batch
+                torch.cuda.empty_cache()
+
+            optimizer_to(optimizer, 'cpu')
+            
+            train_loss /= num_data
+            train_rmse = train_loss ** (1/2)
+
+            print(f'[{epoch+1}/{config["epochs"]}] MSE: {train_loss}, RMSE: {train_rmse}')
+
+            model.eval()
+            with torch.no_grad():
+
+                val_loss = 0
+                num_data = 0
+
+                for _, eeg, score, label_cls in tqdm(testloader, desc=f"Epoch {epoch+1} / VALIDATE", ncols=100, ascii=" =", leave=False):
+
+                    # Batch size
+                    num_batch = eeg.shape[0]
+                    num_data += num_batch
+
+                    true_points = torch.round(score).type("torch.FloatTensor").to(config["device"])
+                    pred_probs = model(eeg.to(config["device"]))
+                    pred_points = 8 * pred_probs + 1
+                    # true_class = label_cls.type("torch.LongTensor").to(config["device"])
+
+                    del score, eeg, label_cls
+                    torch.cuda.empty_cache()
+
+                    # Calculate Loss Function
+                    loss = LOSS(pred_points, true_points)
+
+                    del pred_probs, pred_points, true_points
+                    torch.cuda.empty_cache()
+                    
+                    val_loss += loss.item()*num_batch
+
+                    del loss, num_batch
+                    torch.cuda.empty_cache()
+                
+                val_loss /= num_data
+                val_rmse = val_loss ** (1/2)
+
+                if epoch==0:
+                    best_rmse_val = val_rmse
+                    results[fold] = best_rmse_val
+                    best_loss_val = val_loss
+                    torch.save(model.state_dict(), os.path.join(save_path, f'best_model_{epoch+1}.pt'))
+                else:
+                    if val_rmse <= best_rmse_val:
+                        best_rmse_val = val_rmse
+                        results[fold] = best_rmse_val
+                        best_loss_val = val_loss
+                        torch.save(model.state_dict(), os.path.join(save_path, f'best_model_{epoch+1}.pt'))
+                print(f'\t[Validation] LOSS: {val_loss} | RMSE: {val_rmse}\n\t[BEST] LOSS: {best_loss_val} | RMSE: {best_rmse_val}')
+            f.write(f'{epoch+1},{train_loss},{train_rmse},{val_loss},{val_rmse}\n')
+            del val_loss, val_rmse, train_loss, train_rmse
             torch.cuda.empty_cache()
         f.close()   
         del optimizer, model, LOSS, trainloader, testloader, train_subsampler, test_subsampler
@@ -257,14 +418,14 @@ def test_cv(config):
 
     if config["feature_type"]=="EEG":
         if config["basemean"]:
-            dataset = DEAP(data_dir=W_BASEMEAN_DATA_PATH, label_path=LABEL_PATH, target=config["target"], feature_type="EEG")
+            dataset = DEAP(data_dir=W_BASEMEAN_DATA_PATH, label_path=LABEL_PATH, target=config["target"], file_length=config["file_length"], feature_type="EEG")
         else:
-            dataset = DEAP(data_dir=WO_BASEMEAN_DATA_PATH, label_path=LABEL_PATH, target=config["target"], feature_type="EEG")
+            dataset = DEAP(data_dir=WO_BASEMEAN_DATA_PATH, label_path=LABEL_PATH, target=config["target"], file_length=config["file_length"], feature_type="EEG")
     elif config["feature_type"]=="DE":
         if config["basemean"]:
-            dataset = DEAP(data_dir=DE_W_BASEMEAN_DATA_PATH, label_path=LABEL_PATH, target=config["target"], feature_type="DE")
+            dataset = DEAP(data_dir=DE_W_BASEMEAN_DATA_PATH, label_path=LABEL_PATH, target=config["target"], file_length=config["file_length"], feature_type="DE")
         else:
-            dataset = DEAP(data_dir=DE_WO_BASEMEAN_DATA_PATH, label_path=LABEL_PATH, target=config["target"], feature_type="DE")
+            dataset = DEAP(data_dir=DE_WO_BASEMEAN_DATA_PATH, label_path=LABEL_PATH, target=config["target"], file_length=config["file_length"], feature_type="DE")
 
     # Devide folds
     for fold, (_, test_idx) in enumerate(kfold):
@@ -274,81 +435,182 @@ def test_cv(config):
         print(f'\nTraining for fold {fold+1}')
 
         LOSS = Custom_Loss(device=config["device"], alpha=config["alpha"], dist_type=config["weight"])
-        model = EmoticonNet(device=config["device"], n_classes=config["n_classes"])
+        model = EmoticonNet(device=config["device"], n_classes=config["n_classes"], formula=config["formula"])
         ep = weight_epochs[fold]
         model.load_state_dict(torch.load(os.path.join(WEIGHTS_PATH, config["output_dir"], f'ALPHA_{alpha}', f'fold_{fold+1}', f'best_model_{ep}.pt')))
 
-        for epoch in range(config["epochs"]):
-            print(f"[INFO] Target:{target}||Formula:{formula}||Loss:{weight}||Alpha:{alpha}||BaseMean:{basemean}||Fold:{fold+1}")
-            torch.cuda.empty_cache()
+        print(f"[INFO] Target:{target}||Formula:{formula}||Loss:{weight}||Alpha:{alpha}||BaseMean:{basemean}||Fold:{fold+1}")
+        torch.cuda.empty_cache()
 
-            model.eval()
-            with torch.no_grad():
+        model.eval()
+        with torch.no_grad():
 
-                test_mse = 0
-                test_ce = 0
-                test_loss = 0
-                num_data = 0
+            test_mse = 0
+            test_ce = 0
+            test_loss = 0
+            num_data = 0
 
-                for _, eeg, score, label_cls in tqdm(testloader, desc=f"Epoch {epoch+1} / VALIDATE", ncols=100, ascii=" =", leave=False):
+            for _, eeg, score, label_cls in tqdm(testloader, desc=f"Epoch {epoch+1} / VALIDATE", ncols=100, ascii=" =", leave=False):
 
-                    # Batch size
-                    num_batch = eeg.shape[0]
-                    num_data += num_batch
+                # Batch size
+                num_batch = eeg.shape[0]
+                num_data += num_batch
 
-                    true_points = torch.round(score).type("torch.FloatTensor").to(config["device"])
-                    pred_probs = model(eeg.to(config["device"]))
-                    pred_points = cal.calculate(pred_probs)
-                    true_class = label_cls.type("torch.LongTensor").to(config["device"])
+                true_points = torch.round(score).type("torch.FloatTensor").to(config["device"])
+                pred_probs = model(eeg.to(config["device"]))
+                pred_points = cal.calculate(pred_probs)
+                true_class = label_cls.type("torch.LongTensor").to(config["device"])
 
-                    del score, eeg, label_cls
-                    torch.cuda.empty_cache()
+                del score, eeg, label_cls
+                torch.cuda.empty_cache()
 
-                    # Calculate Loss Function
-                    loss, mse, ce = LOSS(pred_probs, true_class, pred_points, true_points)
+                # Calculate Loss Function
+                loss, mse, ce = LOSS(pred_probs, true_class, pred_points, true_points)
 
-                    del pred_probs, true_class, pred_points, true_points
-                    torch.cuda.empty_cache()
-                    
-                    test_mse += mse.item()*num_batch
-                    test_ce += ce.item()*num_batch
-                    test_loss += loss.item()*num_batch
-
-                    del loss, mse, ce, num_batch
-                    torch.cuda.empty_cache()
+                del pred_probs, true_class, pred_points, true_points
+                torch.cuda.empty_cache()
                 
-                test_mse /= num_data
-                test_ce /= num_data
-                test_loss /= num_data
-                test_rmse = test_mse ** (1/2)
+                test_mse += mse.item()*num_batch
+                test_ce += ce.item()*num_batch
+                test_loss += loss.item()*num_batch
 
-                results[fold] = test_rmse.detach().cpu().item()
+                del loss, mse, ce, num_batch
+                torch.cuda.empty_cache()
+            
+            test_mse /= num_data
+            test_ce /= num_data
+            test_loss /= num_data
+            test_rmse = test_mse ** (1/2)
 
-                print(f'\t[Test] LOSS: {test_loss} | MSE: {test_mse} | CE: {test_ce} | RMSE: {test_rmse}')
-            del test_mse, test_ce, test_loss, test_rmse
-            torch.cuda.empty_cache()
+            results[fold] = test_rmse.detach().cpu().item()
+
+            print(f'\t[Test] LOSS: {test_loss} | MSE: {test_mse} | CE: {test_ce} | RMSE: {test_rmse}')
 
         print(f"\nFold {fold+1}: {test_rmse}")
+        del test_mse, test_ce, test_loss, test_rmse
+        torch.cuda.empty_cache()
+        
     print(f"[Results]\nFold 1: {results[0]}\nFold 2: {results[1]}\nFold 3: {results[2]}\nFold 4: {results[3]}\nFold 5: {results[4]}")
     print(f"Mean RMSE of 5 folds CV: {np.mean(results)}")
 
+def test_mse(config):
+    # Basic Informations
+    target = config["target"]
+    basemean = config["basemean"]
+
+    torch.cuda.empty_cache()
+
+    results = [0, 0, 0, 0, 0]
+    weight_epochs = config["test_weight"].split(" ")
+    
+    kfold = get_5fold(LABEL_PATH, file_length=config["file_length"])
+    SIGMOID = nn.Sigmoid()
+
+    if config["feature_type"]=="EEG":
+        input_length = int(7680 / (60//config["file_length"]))
+        input_image = torch.zeros(1, input_length, 1, 9, 9)
+        if config["basemean"]:
+            dataset = DEAP(data_dir=W_BASEMEAN_DATA_PATH, label_path=LABEL_PATH, target=config["target"], file_length=config["file_length"], feature_type="EEG")
+        else:
+            dataset = DEAP(data_dir=WO_BASEMEAN_DATA_PATH, label_path=LABEL_PATH, target=config["target"], file_length=config["file_length"], feature_type="EEG")
+    elif config["feature_type"]=="DE":
+        input_length = int(60 / (60//config["file_length"]))
+        input_image = torch.zeros(1, input_length, 1, 9, 9)
+        if config["basemean"]:
+            dataset = DEAP(data_dir=DE_W_BASEMEAN_DATA_PATH, label_path=LABEL_PATH, target=config["target"], file_length=config["file_length"], feature_type="DE")
+        else:
+            dataset = DEAP(data_dir=DE_WO_BASEMEAN_DATA_PATH, label_path=LABEL_PATH, target=config["target"], file_length=config["file_length"], feature_type="DE")
+
+    # Devide folds
+    for fold, (train_idx, test_idx) in enumerate(kfold):
+        train_subsampler = torch.utils.data.SubsetRandomSampler(train_idx)
+        test_subsampler = torch.utils.data.SubsetRandomSampler(test_idx)
+
+        trainloader = torch.utils.data.DataLoader(dataset, num_workers=4, batch_size=config["batch"], sampler=train_subsampler) 
+        testloader = torch.utils.data.DataLoader(dataset, num_workers=4, batch_size=config["batch"], sampler=test_subsampler) 
+
+        save_path = os.path.join(WEIGHTS_PATH, config["target"], config["feature_type"], str(config["file_length"])+'s', config["output_dir"], f'fold_{fold+1}')
+        create_directory(save_path)
+
+        f = open(os.path.join(save_path, 'output.csv'), 'w')
+        f.write('epoch,MSE,RMSE,v_MSE,v_RMSE\n')
+
+        print(f'\nTraining for fold {fold+1}')
+
+        LOSS = nn.MSELoss() # Mean Squared Error Loss
+        model = EmoticonNet(device=config["device"], n_classes=config["n_classes"], input_image=input_image, formula=config["formula"])
+        ep = weight_epochs[fold]
+        model.load_state_dict(torch.load(os.path.join(WEIGHTS_PATH, config["output_dir"], f'fold_{fold+1}', f'best_model_{ep}.pt')))
+
+        print(f"[INFO] Target:{target}||Loss:Mean Squared Error||BaseMean:{basemean}||Fold:{fold+1}")
+        torch.cuda.empty_cache()
+
+        model.eval()
+        with torch.no_grad():
+
+            test_loss = 0
+            num_data = 0
+
+            for _, eeg, score, label_cls in tqdm(testloader, desc=f"Epoch {epoch+1} / VALIDATE", ncols=100, ascii=" =", leave=False):
+
+                # Batch size
+                num_batch = eeg.shape[0]
+                num_data += num_batch
+
+                true_points = torch.round(score).type("torch.FloatTensor").to(config["device"])
+                pred_probs = model(eeg.to(config["device"]))
+                pred_points = 30.0 * SIGMOID(pred_probs)
+                # true_class = label_cls.type("torch.LongTensor").to(config["device"])
+
+                del score, eeg, label_cls
+                torch.cuda.empty_cache()
+
+                # Calculate Loss Function
+                loss = LOSS(pred_points, true_points)
+
+                del pred_probs, pred_points, true_points
+                torch.cuda.empty_cache()
+                
+                test_loss += loss.item()*num_batch
+
+                del loss, num_batch
+                torch.cuda.empty_cache()
+            
+            test_loss /= num_data
+            test_rmse = test_loss ** (1/2)
+
+            print(f'\t[Test] LOSS: {test_loss} | RMSE: {test_rmse}')
+
+        print(f"\nFold {fold+1}: {test_rmse}")
+
+        del test_loss, test_rmse
+        torch.cuda.empty_cache()
+
+    print(f"[Results]\nFold 1: {results[0]}\nFold 2: {results[1]}\nFold 3: {results[2]}\nFold 4: {results[3]}\nFold 5: {results[4]}")
+    print(f"Mean RMSE of 5 folds CV: {np.mean(results)}")
+
+
 if __name__=="__main__":
 
-    # python ./main.py --mode Train --dataset DEAP --epochs 500 --batch_size 192 --optimizer SGD --target valence --basemean True --alpha 1 --n_classes 9 --file_length 10 --feature EEG --formula Expectation --weight None --device cuda:1 --output_dir TEST
+    # cd workspace/G_Project/code
+    # conda activate vggish
 
     # Basic & Model Options
     parser  = argparse.ArgumentParser(description="Alzheimer's Disease Detection")
     parser.add_argument('--mode', type=str, default='Train', choices=['Train', 'Test'], help='Select the Mode')
     parser.add_argument('--epochs', type=int, default=1000, help='Set the number of epochs')
     parser.add_argument('--batch_size', type=int, default=8, help='Set the batch size')
-    parser.add_argument('--optimizer', type=str, default='SGD', choices=['SGD', 'Adam'], help='Select the Optimizer')
+    parser.add_argument('--optimizer', type=str, default='SGD', choices=['SGD', 'Adam', 'AdamW'], help='Select the Optimizer')
     parser.add_argument('--learning_rate', type=float, default=1e-4, help='Set the Learning Rate')
     parser.add_argument('--device', type=str, default='cpu', choices=['cpu','cuda:0','cuda:1','cuda:2','cuda:3'], help='Select GPU or CPU')
+    parser.add_argument('--weight_decay', type=float, default=1e-4, help='Set the Weight decay')
+    parser.add_argument('--beta1', type=float, default=0.9, help='Set the beta1')
+    parser.add_argument('--beta2', type=float, default=0.999, help='Set the beta2')
 
-    parser.add_argument('--formula', type=str, default='Expectation', choices=['Expectation', 'Bernoulli'], help='Select the Calculator Type')
+    parser.add_argument('--formula', type=str, default='Expectation', choices=['None', 'Expectation', 'Bernoulli'], help='Select the Calculator Type')
     parser.add_argument('--weight', type=str, default='None', choices=['None', 'Absolute', 'Square'], help='Select the Weight Type')
     parser.add_argument('--alpha', type=int, default=1, help='Select the weight of CE')
-    parser.add_argument('--n_classes', type=int, default=9, choices=[9, 5, 3], help='Select the number of intervals')
+    parser.add_argument('--n_classes', type=int, default=9, choices=[9, 5, 3, 1], help='Select the number of intervals')
 
     # Data Options
     parser.add_argument('--target', type=str, default='valence', choices=['valence', 'arousal'], help='Select the Target Type')
@@ -371,7 +633,8 @@ if __name__=="__main__":
         "batch": args.batch_size,
         "optimizer": args.optimizer,
         "learning_rate": args.learning_rate,
-        "momentum": MOMENTUM,
+        "betas": (args.beta1, args.beta2),
+        "weight_decay": args.weight_decay,
 
         "formula": args.formula,
         "weight": args.weight,
@@ -394,7 +657,6 @@ if __name__=="__main__":
         "kernel": KERNEL, 
         "stride": STRIDE, 
         "padding": PADDING, 
-        "n_classes": N_CLASSES, 
         "n_units": N_UNITS
     }
 
@@ -418,7 +680,10 @@ if __name__=="__main__":
     print("----------------------------------")
 
     if args.mode == "Train":
-        train_cv(config)
+        if args.formula == "None":
+            train_mse(config)
+        elif args.formula in ['Expectation', 'Bernoulli']:
+            train_cv(config)
 
         print("\n------------ Options ------------")
         print("--Mode:", args.mode)
@@ -440,6 +705,9 @@ if __name__=="__main__":
         print("----------------------------------")
 
     elif args.mode == "Test":
-        test_cv(config)
+        if args.formula == "None":
+            test_mse(config)
+        elif args.formula in ['Expectation', 'Bernoulli']:
+            test_cv(config)
     else:
         print("Mode Error...!!")

@@ -12,6 +12,7 @@ import os
 import numpy as np
 import pandas as pd
 from sklearn.model_selection import KFold
+from tqdm import tqdm
 import warnings
 warnings.filterwarnings('ignore')
 
@@ -104,14 +105,25 @@ if __name__=="__main__":
 
     # dataset = DEAP(W_BASEMEAN_DATA_PATH, LABEL_PATH, target="arousal", n_classes=3, file_length=10)
     # dataloader = torch.utils.data.DataLoader(dataset, batch_size=1) 
-    dataset = DEAP(DE_W_BASEMEAN_DATA_PATH, LABEL_PATH, target="arousal", n_classes=3, feature_type="DE", file_length=10)
-    dataloader = torch.utils.data.DataLoader(dataset, batch_size=1) 
+    dataset = DEAP(W_BASEMEAN_DATA_PATH, LABEL_PATH, target="arousal", n_classes=9, feature_type="EEG", file_length=1)
+    # dataloader = torch.utils.data.DataLoader(dataset, batch_size=1) 
 
-    for name, eeg, score, label_cls in dataloader:
-        print(f'-----{name}')
-        print(">>", eeg.shape)
-        print(">>", score)
-        print(">>", label_cls)
+    # # for name, eeg, score, label_cls in dataloader:
+    # #     print(f'-----{name}')
+    # #     print(">>", eeg.shape)
+    # #     print(">>", score)
+    # #     print(">>", label_cls)
     
-    print(len(dataloader))
-    print(dataloader.__len__)
+    # print(len(dataloader))
+    # print(dataloader.__len__)
+
+    samples = get_5fold(LABEL_PATH, 1)
+    for train_idx, test_idx in tqdm(samples):
+        train_subsampler = torch.utils.data.SubsetRandomSampler(train_idx)
+        test_subsampler = torch.utils.data.SubsetRandomSampler(test_idx)
+
+        trainloader = torch.utils.data.DataLoader(dataset, num_workers=8, batch_size=1024, sampler=train_subsampler) 
+        testloader = torch.utils.data.DataLoader(dataset, num_workers=4, batch_size=1024, sampler=test_subsampler) 
+
+        print(len(trainloader))
+        print(len(testloader))
