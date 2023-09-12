@@ -25,7 +25,6 @@ class Calculator():
     def bernoulli(self, probs):
         return torch.sum(torch.tensor(range(1,10)).to(probs.device)*probs - self.penalty*(1-probs)*probs, 1)
 
-
 class Custom_Loss(nn.Module):
     def __init__(self, device='cpu', alpha=1, dist_type="None", n_classes=9):
         super(Custom_Loss, self).__init__()

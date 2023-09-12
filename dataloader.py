@@ -97,9 +97,6 @@ class DEAP(Dataset):
         
         return name, eeg_signal.unsqueeze(1).type("torch.FloatTensor"), score, label_cls.astype(np.int32)
 
-
-
-
 if __name__=="__main__":
     print("[DATA LOADER]")
 

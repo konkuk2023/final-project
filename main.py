@@ -21,6 +21,13 @@ import warnings
 warnings.filterwarnings('ignore')
 
 class Calculator():
+    """
+        MMSE Score Calculator
+            Expectation Formula is the base formula for calculating MMSE score.
+            You can choose whether to apply Bernoulli Penalty on the calculation.
+            - Expectation Formula
+            - Bernoulli Formula: Apply Bernoulli Penalty on Expectation Formula
+    """
     def __init__(self, cal_type, penalty=1, n_classes=9):
         self.cal_type = cal_type
         self.penalty = penalty
@@ -36,6 +43,10 @@ class Calculator():
         return torch.sum(torch.tensor(range(1,10,self.interval_length)).to(probs.device)*probs - self.penalty*(1-probs)*probs, 1)
     
 def optimizer_to(optim, device):
+    """
+        Reference: https://github.com/pytorch/pytorch/issues/8741
+        You can put the optimizer on GPU or CPU.
+    """
     for param in optim.state.values():
         # Not sure there are any global tensors in the state dict
         if isinstance(param, torch.Tensor):
@@ -50,6 +61,11 @@ def optimizer_to(optim, device):
                         subparam._grad.data = subparam._grad.data.to(device)
 
 def str2bool(v):
+    """
+        Reference: https://stackoverflow.com/questions/15008758/parsing-boolean-values-with-argparse
+        Argparse gets all of the input as a string type or a numeruc type.
+        So you have to change the string type to boolean type if you need.
+    """
     if isinstance(v, bool):
        return v
     if v.lower() in ('yes', 'true', 't', 'y', '1'):
@@ -60,6 +76,9 @@ def str2bool(v):
         raise argparse.ArgumentTypeError('Boolean value expected.')
 
 def create_directory(directory):
+    """
+        Create a directory to save the weights and logs.
+    """
     try:
         if not os.path.exists(directory):
             os.makedirs(directory)
@@ -67,6 +86,9 @@ def create_directory(directory):
         print("Error: Failed to create the directory.")
 
 def train_cv(config):
+    """
+        Function to train a model which uses Expectation Formula or Bernoulli Formula by 5-fold cross validation.
+    """
     # Basic Informations
     target = config["target"]
     formula = config["formula"]
@@ -74,9 +96,9 @@ def train_cv(config):
     alpha = config["alpha"]
     basemean = config["basemean"]
 
-
     torch.cuda.empty_cache()
 
+    # Results of each fold
     results = [0, 0, 0, 0, 0]
     
     kfold = get_5fold(LABEL_PATH, file_length=config["file_length"])
@@ -105,8 +127,8 @@ def train_cv(config):
         trainloader = torch.utils.data.DataLoader(dataset, num_workers=4, batch_size=config["batch"], sampler=train_subsampler) 
         testloader = torch.utils.data.DataLoader(dataset, num_workers=4, batch_size=config["batch"], sampler=test_subsampler) 
 
-        # save_path = os.path.join(WEIGHTS_PATH, config["target"], config["feature_type"], str(config["file_length"])+'s', config["output_dir"], f'ALPHA_{alpha}', f'fold_{fold+1}')
-        save_path = os.path.join(WEIGHTS_PATH, config["target"], 'TEST', str(config["file_length"])+'s', config["output_dir"], f'fold_{fold+1}')
+        save_path = os.path.join(WEIGHTS_PATH, config["target"], config["feature_type"], str(config["file_length"])+'s', config["output_dir"], f'ALPHA_{alpha}', f'fold_{fold+1}')
+        # save_path = os.path.join(WEIGHTS_PATH, config["target"], 'TEST', str(config["file_length"])+'s', config["output_dir"], f'fold_{fold+1}')
         create_directory(save_path)
 
         f = open(os.path.join(save_path, 'output.csv'), 'w')
@@ -135,9 +157,7 @@ def train_cv(config):
             train_ce = 0
             train_loss = 0
             num_data = 0
-            # print("MEMORY USAGE 1:", round(torch.cuda.memory_allocated(1)/1024**3, 2), "GB")
             optimizer_to(optimizer, config['device'])
-            ## error
             for _, eeg, score, label_cls in tqdm(trainloader, desc=f"Epoch {epoch+1} / TRAIN", ncols=100, ascii=" =", leave=False):
                 # Batch size
                 num_batch = eeg.shape[0]
@@ -224,7 +244,7 @@ def train_cv(config):
                     best_mse_val = val_mse
                     best_ce_val = val_ce
                     best_loss_val = val_loss
-                    # torch.save(model.state_dict(), os.path.join(save_path, f'best_model_{epoch+1}.pt'))
+                    torch.save(model.state_dict(), os.path.join(save_path, f'best_model_{epoch+1}.pt'))
                 else:
                     if val_rmse <= best_rmse_val:
                         best_rmse_val = val_rmse
@@ -232,7 +252,7 @@ def train_cv(config):
                         best_mse_val = val_mse
                         best_ce_val = val_ce
                         best_loss_val = val_loss
-                        # torch.save(model.state_dict(), os.path.join(save_path, f'best_model_{epoch+1}.pt'))
+                        torch.save(model.state_dict(), os.path.join(save_path, f'best_model_{epoch+1}.pt'))
                 print(f'\t[Validation] LOSS: {val_loss} | MSE: {val_mse} | CE: {val_ce} | RMSE: {val_rmse}\n\t[BEST] LOSS: {best_loss_val} | MSE: {best_mse_val} | CE: {best_ce_val} | RMSE: {best_rmse_val}')
             f.write(f'{epoch+1},{train_loss},{train_mse},{train_ce},{train_rmse},{val_loss},{val_mse},{val_ce},{val_rmse}\n')
             del val_mse, val_ce, val_loss, val_rmse, train_mse, train_ce, train_loss, train_rmse
@@ -245,6 +265,9 @@ def train_cv(config):
     print(f"Mean RMSE of 5 folds CV: {np.mean(results)}")
 
 def train_mse(config):
+    """
+        Function to train a model which uses Mean Squared Error as a loss function by 5-fold cross validation.
+    """
     # Basic Informations
     print("Train a model which uses only Mean Squared Error!")
     target = config["target"]
@@ -401,6 +424,9 @@ def train_mse(config):
     print(f"Mean RMSE of 5 folds CV: {np.mean(results)}")
 
 def test_cv(config):
+    """
+        Function to test a model which uses Expectation Formula or Bernoulli Formula by 5-fold cross validation.
+    """
     # Basic Informations
     target = config["target"]
     formula = config["formula"]
@@ -494,6 +520,9 @@ def test_cv(config):
     print(f"Mean RMSE of 5 folds CV: {np.mean(results)}")
 
 def test_mse(config):
+    """
+        Function to test a model which uses Mean Squared Error as a loss function by 5-fold cross validation.
+    """
     # Basic Informations
     target = config["target"]
     basemean = config["basemean"]
@@ -588,7 +617,6 @@ def test_mse(config):
 
     print(f"[Results]\nFold 1: {results[0]}\nFold 2: {results[1]}\nFold 3: {results[2]}\nFold 4: {results[3]}\nFold 5: {results[4]}")
     print(f"Mean RMSE of 5 folds CV: {np.mean(results)}")
-
 
 if __name__=="__main__":
 
