@@ -15,3 +15,5 @@ DE_W_BASEMEAN_DATA_PATH = "/workspace/G_Project/DEAP_Dataset/Feature_Extraction/
 DE_WO_BASEMEAN_DATA_PATH = "/workspace/G_Project/DEAP_Dataset/Feature_Extraction/DE_feature/basemean_no_pt"
 LABEL_PATH = "/workspace/G_Project/DEAP_Dataset/EEG_label/EEG_label.csv"
 WEIGHTS_PATH = "/workspace/G_Project/weights"
+SCOPE1 = "https://spreadsheets.google.com/feeds"
+SCOPE2 = "https://www.googleapis.com/auth/drive"

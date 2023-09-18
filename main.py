@@ -6,7 +6,8 @@ from torch.utils.data import Dataset
 
 from options import INPUT_IMAGE, KERNEL, STRIDE, PADDING, N_CLASSES, N_UNITS, MOMENTUM, \
                     W_BASEMEAN_DATA_PATH, WO_BASEMEAN_DATA_PATH, DE_W_BASEMEAN_DATA_PATH, DE_WO_BASEMEAN_DATA_PATH, \
-                    LABEL_PATH, WEIGHTS_PATH
+                    LABEL_PATH, WEIGHTS_PATH, SCOPE1, SCOPE2
+from key_options import KEY_FILE, SHEET_URL # Not opened in GitHub
 from models import EmoticonNet
 from dataloader import get_5fold, DEAP
 from loss import Custom_Loss, Custom_Loss2
@@ -17,6 +18,8 @@ from tqdm import tqdm
 import numpy as np
 import pandas as pd
 from sklearn.model_selection import KFold
+import gspread
+from oauth2client.service_account import ServiceAccountCredentials
 import warnings
 warnings.filterwarnings('ignore')
 
@@ -85,6 +88,80 @@ def create_directory(directory):
     except OSError:
         print("Error: Failed to create the directory.")
 
+def save_google_spread(config, results):
+    """
+        Save the RMSE results of 5-fold cross validation on the google spread sheet.
+    """
+    sec2sheet = {
+        60: "Full Length",
+        10: "10s Length",
+        1: "1s Length"
+    }
+
+    base_offset = 2
+    intervals_offset = {
+        9: 0,
+        5: 12,
+        3: 24
+    }
+    target_offset = {
+        "valence": 0,
+        "arousal": 6
+    }
+    formula_offset = {
+        "Expectation": 0,
+        "Bernoulli": 3
+    }
+    weight_offset = {
+        "None": 0,
+        "Absolute": 1, 
+        "Square": 2
+    }
+
+    scope = [SCOPE1, SCOPE2]
+    credentials = ServiceAccountCredentials.from_json_keyfile_name(KEY_FILE, scope)
+    gc = gspread.authorize(credentials)
+    doc = gc.open_by_url(SHEET_URL)
+    worksheet = doc.worksheet(sec2sheet[config["file_length"]])
+
+    offset = base_offset + intervals_offset[config["n_classes"]] + target_offset[config["target"]] \
+            + formula_offset[config["formula"]] + weight_offset[config["weight"]]
+    offset = str(offset)
+
+    mean = np.mean(results)
+    worksheet.update_acell("G"+offset, np.round(mean, 4))
+    worksheet.update_acell("H"+offset, np.round(results[0], 4))
+    worksheet.update_acell("I"+offset, np.round(results[1], 4))
+    worksheet.update_acell("J"+offset, np.round(results[2], 4))
+    worksheet.update_acell("K"+offset, np.round(results[3], 4))
+    worksheet.update_acell("L"+offset, np.round(results[4], 4))
+
+def save_google_spread_test_params(config, results, epochs, offset):
+    """
+        Save the RMSE results of 5-fold cross validation on the google spread sheet for testing hyperparameters.
+    """
+    scope = [SCOPE1, SCOPE2]
+    credentials = ServiceAccountCredentials.from_json_keyfile_name(KEY_FILE, scope)
+    gc = gspread.authorize(credentials)
+    doc = gc.open_by_url(SHEET_URL)
+    worksheet = doc.worksheet("Settings")
+
+    offset = str(offset)
+
+    mean = np.mean(results)
+    worksheet.update_acell("F"+offset, np.round(mean, 4))
+    worksheet.update_acell("G"+offset, np.round(results[0], 4))
+    worksheet.update_acell("H"+offset, np.round(results[1], 4))
+    worksheet.update_acell("I"+offset, np.round(results[2], 4))
+    worksheet.update_acell("J"+offset, np.round(results[3], 4))
+    worksheet.update_acell("K"+offset, np.round(results[4], 4))
+
+    worksheet.update_acell("M"+offset, epochs[0])
+    worksheet.update_acell("N"+offset, epochs[1])
+    worksheet.update_acell("O"+offset, epochs[2])
+    worksheet.update_acell("P"+offset, epochs[3])
+    worksheet.update_acell("Q"+offset, epochs[4])
+
 def train_cv(config):
     """
         Function to train a model which uses Expectation Formula or Bernoulli Formula by 5-fold cross validation.
@@ -99,6 +176,7 @@ def train_cv(config):
     torch.cuda.empty_cache()
 
     # Results of each fold
+    best_epochs = [0, 0, 0, 0, 0]
     results = [0, 0, 0, 0, 0]
     
     kfold = get_5fold(LABEL_PATH, file_length=config["file_length"])
@@ -124,11 +202,13 @@ def train_cv(config):
         train_subsampler = torch.utils.data.SubsetRandomSampler(train_idx)
         test_subsampler = torch.utils.data.SubsetRandomSampler(test_idx)
 
-        trainloader = torch.utils.data.DataLoader(dataset, num_workers=4, batch_size=config["batch"], sampler=train_subsampler) 
-        testloader = torch.utils.data.DataLoader(dataset, num_workers=4, batch_size=config["batch"], sampler=test_subsampler) 
+        trainloader = torch.utils.data.DataLoader(dataset, num_workers=2, batch_size=config["batch"], sampler=train_subsampler) 
+        testloader = torch.utils.data.DataLoader(dataset, num_workers=2, batch_size=1, sampler=test_subsampler) 
 
-        save_path = os.path.join(WEIGHTS_PATH, config["target"], config["feature_type"], str(config["file_length"])+'s', config["output_dir"], f'ALPHA_{alpha}', f'fold_{fold+1}')
-        # save_path = os.path.join(WEIGHTS_PATH, config["target"], 'TEST', str(config["file_length"])+'s', config["output_dir"], f'fold_{fold+1}')
+        if config["test_params"]:
+            save_path = os.path.join(WEIGHTS_PATH, config["target"], 'TEST2', str(config["file_length"])+'s', config["output_dir"], f'fold_{fold+1}')
+        else:
+            save_path = os.path.join(WEIGHTS_PATH, config["target"], config["feature_type"], str(config["file_length"])+'s', config["output_dir"], f'ALPHA_{alpha}', f'fold_{fold+1}')
         create_directory(save_path)
 
         f = open(os.path.join(save_path, 'output.csv'), 'w')
@@ -241,6 +321,7 @@ def train_cv(config):
                 if epoch==0:
                     best_rmse_val = val_rmse
                     results[fold] = best_rmse_val
+                    best_epochs[fold] = epoch+1
                     best_mse_val = val_mse
                     best_ce_val = val_ce
                     best_loss_val = val_loss
@@ -249,6 +330,7 @@ def train_cv(config):
                     if val_rmse <= best_rmse_val:
                         best_rmse_val = val_rmse
                         results[fold] = best_rmse_val
+                        best_epochs[fold] = epoch+1
                         best_mse_val = val_mse
                         best_ce_val = val_ce
                         best_loss_val = val_loss
@@ -261,8 +343,18 @@ def train_cv(config):
         del optimizer, model, LOSS, trainloader, testloader, train_subsampler, test_subsampler
         torch.cuda.empty_cache()
         print(f"\nFold {fold+1}: {best_rmse_val}")
-    print(f"[Results]\nFold 1: {results[0]}\nFold 2: {results[1]}\nFold 3: {results[2]}\nFold 4: {results[3]}\nFold 5: {results[4]}")
-    print(f"Mean RMSE of 5 folds CV: {np.mean(results)}")
+    print(f"[Results]\nFold 1: {results[0]:.4f}\nFold 2: {results[1]:.4f}\nFold 3: {results[2]:.4f}\nFold 4: {results[3]:.4f}\nFold 5: {results[4]:.4f}")
+    print(f"Mean RMSE of 5 folds CV: {np.mean(results):.4f}")
+
+    if config["save_gspread"]:
+        save_google_spread(config, results)
+        print("Completely save the results on google spread sheet!!")
+    else:
+        print("Don't save the results on google spread sheet.")
+    
+    if config["test_params"]:
+        save_google_spread_test_params(config, results, best_epochs, config["gspread_offset"])
+        print("[TEST PARAMS] Completely save the results on google spread sheet!!")
 
 def train_mse(config):
     """
@@ -301,7 +393,7 @@ def train_mse(config):
         test_subsampler = torch.utils.data.SubsetRandomSampler(test_idx)
 
         trainloader = torch.utils.data.DataLoader(dataset, num_workers=4, batch_size=config["batch"], sampler=train_subsampler) 
-        testloader = torch.utils.data.DataLoader(dataset, num_workers=4, batch_size=config["batch"], sampler=test_subsampler) 
+        testloader = torch.utils.data.DataLoader(dataset, num_workers=4, batch_size=1, sampler=test_subsampler) 
 
         save_path = os.path.join(WEIGHTS_PATH, config["target"], config["feature_type"], str(config["file_length"])+'s', config["output_dir"], f'fold_{fold+1}')
         create_directory(save_path)
@@ -420,8 +512,8 @@ def train_mse(config):
         del optimizer, model, LOSS, trainloader, testloader, train_subsampler, test_subsampler
         torch.cuda.empty_cache()
         print(f"\nFold {fold+1}: {best_rmse_val}")
-    print(f"[Results]\nFold 1: {results[0]}\nFold 2: {results[1]}\nFold 3: {results[2]}\nFold 4: {results[3]}\nFold 5: {results[4]}")
-    print(f"Mean RMSE of 5 folds CV: {np.mean(results)}")
+    print(f"[Results]\nFold 1: {results[0]:.4f}\nFold 2: {results[1]:.4f}\nFold 3: {results[2]:.4f}\nFold 4: {results[3]:.4f}\nFold 5: {results[4]:.4f}")
+    print(f"Mean RMSE of 5 folds CV: {np.mean(results):.4f}")
 
 def test_cv(config):
     """
@@ -437,17 +529,21 @@ def test_cv(config):
     torch.cuda.empty_cache()
 
     results = [0, 0, 0, 0, 0]
-    weight_epochs = config["test_weight"].split(" ")
+    weight_epochs = config["test_weights"].split(" ")
     
     kfold = get_5fold(LABEL_PATH, file_length=config["file_length"])
     cal = Calculator(cal_type=config["formula"], n_classes=config["n_classes"])
 
     if config["feature_type"]=="EEG":
+        input_length = int(7680 / (60//config["file_length"]))
+        input_image = torch.zeros(1, input_length, 1, 9, 9)
         if config["basemean"]:
             dataset = DEAP(data_dir=W_BASEMEAN_DATA_PATH, label_path=LABEL_PATH, target=config["target"], file_length=config["file_length"], feature_type="EEG")
         else:
             dataset = DEAP(data_dir=WO_BASEMEAN_DATA_PATH, label_path=LABEL_PATH, target=config["target"], file_length=config["file_length"], feature_type="EEG")
     elif config["feature_type"]=="DE":
+        input_length = int(60 / (60//config["file_length"]))
+        input_image = torch.zeros(1, input_length, 1, 9, 9)
         if config["basemean"]:
             dataset = DEAP(data_dir=DE_W_BASEMEAN_DATA_PATH, label_path=LABEL_PATH, target=config["target"], file_length=config["file_length"], feature_type="DE")
         else:
@@ -456,15 +552,16 @@ def test_cv(config):
     # Devide folds
     for fold, (_, test_idx) in enumerate(kfold):
         test_subsampler = torch.utils.data.SubsetRandomSampler(test_idx) 
-        testloader = torch.utils.data.DataLoader(dataset, num_workers=4, batch_size=config["batch"], sampler=test_subsampler) 
+        testloader = torch.utils.data.DataLoader(dataset, num_workers=4, batch_size=64, sampler=test_subsampler) 
+        num_test_data = len(testloader)
 
         print(f'\nTraining for fold {fold+1}')
 
         LOSS = Custom_Loss(device=config["device"], alpha=config["alpha"], dist_type=config["weight"])
-        model = EmoticonNet(device=config["device"], n_classes=config["n_classes"], formula=config["formula"])
+        model = EmoticonNet(device=config["device"], n_classes=config["n_classes"], input_image=input_image, formula=config["formula"])
         ep = weight_epochs[fold]
-        model.load_state_dict(torch.load(os.path.join(WEIGHTS_PATH, config["output_dir"], f'ALPHA_{alpha}', f'fold_{fold+1}', f'best_model_{ep}.pt')))
-
+        model.load_state_dict(torch.load(os.path.join(WEIGHTS_PATH, config["target"], config["feature_type"], str(config["file_length"])+'s', config["output_dir"], f'ALPHA_{alpha}', f'fold_{fold+1}', f'best_model_{ep}.pt')))
+        # print(f"EPOCH: {ep}")
         print(f"[INFO] Target:{target}||Formula:{formula}||Loss:{weight}||Alpha:{alpha}||BaseMean:{basemean}||Fold:{fold+1}")
         torch.cuda.empty_cache()
 
@@ -476,7 +573,7 @@ def test_cv(config):
             test_loss = 0
             num_data = 0
 
-            for _, eeg, score, label_cls in tqdm(testloader, desc=f"Epoch {epoch+1} / VALIDATE", ncols=100, ascii=" =", leave=False):
+            for _, eeg, score, label_cls in tqdm(testloader, desc=f"TEST", ncols=100, ascii=" =", leave=False):
 
                 # Batch size
                 num_batch = eeg.shape[0]
@@ -487,20 +584,26 @@ def test_cv(config):
                 pred_points = cal.calculate(pred_probs)
                 true_class = label_cls.type("torch.LongTensor").to(config["device"])
 
+                # print(true_points.shape)
+                # print(pred_points.shape)
+
                 del score, eeg, label_cls
                 torch.cuda.empty_cache()
 
                 # Calculate Loss Function
                 loss, mse, ce = LOSS(pred_probs, true_class, pred_points, true_points)
-
+                # print(loss)
+                # print(mse)
+                # print(ce)
                 del pred_probs, true_class, pred_points, true_points
                 torch.cuda.empty_cache()
                 
                 test_mse += mse.item()*num_batch
+                # print(test_mse)
                 test_ce += ce.item()*num_batch
                 test_loss += loss.item()*num_batch
 
-                del loss, mse, ce, num_batch
+                del loss, mse, ce
                 torch.cuda.empty_cache()
             
             test_mse /= num_data
@@ -508,16 +611,16 @@ def test_cv(config):
             test_loss /= num_data
             test_rmse = test_mse ** (1/2)
 
-            results[fold] = test_rmse.detach().cpu().item()
-
+            results[fold] = test_rmse
+            
             print(f'\t[Test] LOSS: {test_loss} | MSE: {test_mse} | CE: {test_ce} | RMSE: {test_rmse}')
 
         print(f"\nFold {fold+1}: {test_rmse}")
         del test_mse, test_ce, test_loss, test_rmse
         torch.cuda.empty_cache()
-        
-    print(f"[Results]\nFold 1: {results[0]}\nFold 2: {results[1]}\nFold 3: {results[2]}\nFold 4: {results[3]}\nFold 5: {results[4]}")
-    print(f"Mean RMSE of 5 folds CV: {np.mean(results)}")
+    
+    print(f"[Results]\nFold 1: {results[0]:.4f}\nFold 2: {results[1]:.4f}\nFold 3: {results[2]:.4f}\nFold 4: {results[3]:.4f}\nFold 5: {results[4]:.4f}")
+    print(f"Mean RMSE of 5 folds CV: {np.mean(results):.4f}")
 
 def test_mse(config):
     """
@@ -551,12 +654,10 @@ def test_mse(config):
             dataset = DEAP(data_dir=DE_WO_BASEMEAN_DATA_PATH, label_path=LABEL_PATH, target=config["target"], file_length=config["file_length"], feature_type="DE")
 
     # Devide folds
-    for fold, (train_idx, test_idx) in enumerate(kfold):
-        train_subsampler = torch.utils.data.SubsetRandomSampler(train_idx)
+    for fold, (_, test_idx) in enumerate(kfold):
         test_subsampler = torch.utils.data.SubsetRandomSampler(test_idx)
 
-        trainloader = torch.utils.data.DataLoader(dataset, num_workers=4, batch_size=config["batch"], sampler=train_subsampler) 
-        testloader = torch.utils.data.DataLoader(dataset, num_workers=4, batch_size=config["batch"], sampler=test_subsampler) 
+        testloader = torch.utils.data.DataLoader(dataset, num_workers=4, batch_size=1, sampler=test_subsampler) 
 
         save_path = os.path.join(WEIGHTS_PATH, config["target"], config["feature_type"], str(config["file_length"])+'s', config["output_dir"], f'fold_{fold+1}')
         create_directory(save_path)
@@ -615,16 +716,16 @@ def test_mse(config):
         del test_loss, test_rmse
         torch.cuda.empty_cache()
 
-    print(f"[Results]\nFold 1: {results[0]}\nFold 2: {results[1]}\nFold 3: {results[2]}\nFold 4: {results[3]}\nFold 5: {results[4]}")
-    print(f"Mean RMSE of 5 folds CV: {np.mean(results)}")
+    print(f"[Results]\nFold 1: {results[0]:.4f}\nFold 2: {results[1]:.4f}\nFold 3: {results[2]:.4f}\nFold 4: {results[3]:.4f}\nFold 5: {results[4]:.4f}")
+    print(f"Mean RMSE of 5 folds CV: {np.mean(results):.4f}")
 
 if __name__=="__main__":
 
-    # cd workspace/G_Project/code
-    # conda activate vggish
-
     # Basic & Model Options
     parser  = argparse.ArgumentParser(description="Alzheimer's Disease Detection")
+    parser.add_argument('--test_params', type=str2bool, default=False, help='Select whether to test hyperparameters')
+    parser.add_argument('--gspread_offset', type=int, default=None, help='Select offset to save the results on google spread sheet')
+
     parser.add_argument('--mode', type=str, default='Train', choices=['Train', 'Test'], help='Select the Mode')
     parser.add_argument('--epochs', type=int, default=1000, help='Set the number of epochs')
     parser.add_argument('--batch_size', type=int, default=8, help='Set the batch size')
@@ -649,12 +750,16 @@ if __name__=="__main__":
 
     # Save Options
     parser.add_argument('--output_dir', type=str, default='TEST', help='Select a Dataset')
+    parser.add_argument('--save_gspread', type=str2bool, default=False, help='Select whether to save the results on google spread sheet')
     parser.add_argument('--test_weights', type=str, help='Set the weights of the model for Test')
 
     args = parser.parse_args()
 
     config = {
         # Basic Options
+        "test_params": args.test_params,
+        "gspread_offset": args.gspread_offset,
+
         "mode": args.mode,
         "device": args.device,
         "epochs": args.epochs,
@@ -679,6 +784,7 @@ if __name__=="__main__":
         # Test Model
         "test_weights": args.test_weights,
         "output_dir": args.output_dir,
+        "save_gspread":args.save_gspread, 
 
         # Model Options
         "input_image": INPUT_IMAGE, 
@@ -689,6 +795,7 @@ if __name__=="__main__":
     }
 
     print("\n------------ Options ------------")
+    print("--TEST PARAMS:", args.test_params)
     print("--Mode:", args.mode)
     print("--Target:", args.target)
     print("--Epochs:", args.epochs)
@@ -705,6 +812,7 @@ if __name__=="__main__":
     print("--Weight Type:", args.weight)
     print("--Weight Size:", args.alpha)
     print("--Output Directory:", args.output_dir)
+    print("--Save Google Spread Sheet:", args.save_gspread)
     print("----------------------------------")
 
     if args.mode == "Train":
@@ -714,6 +822,7 @@ if __name__=="__main__":
             train_cv(config)
 
         print("\n------------ Options ------------")
+        print("--TEST PARAMS:", args.test_params)
         print("--Mode:", args.mode)
         print("--Target:", args.target)
         print("--Epochs:", args.epochs)
@@ -730,6 +839,7 @@ if __name__=="__main__":
         print("--Weight Type:", args.weight)
         print("--Weight Size:", args.alpha)
         print("--Output Directory:", args.output_dir)
+        print("--Save Google Spread Sheet:", args.save_gspread)
         print("----------------------------------")
 
     elif args.mode == "Test":

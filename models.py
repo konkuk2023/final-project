@@ -54,7 +54,7 @@ class EmoticonNet(nn.Module):
 
         # EmoticonNet Temporal 1D Convolution
         self.ENet1D = nn.Conv1d(3*3*128, 128, input_image.shape[1], stride=stride, padding=0).to(self.device)
-        nn.init.kaiming_normal_(self.ENet1D.weight)  # Parameter Initialization
+        # nn.init.kaiming_normal_(self.ENet1D.weight)  # Parameter Initialization
 
         # FC layers
         self.fc = nn.Linear(128, 128).to(self.device)

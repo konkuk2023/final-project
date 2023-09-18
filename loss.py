@@ -41,29 +41,33 @@ class Custom_Loss(nn.Module):
             pred_points: [B x 1]
             pred_points: [B x 1]
         """
-        MSE = nn.MSELoss()
-        CE = nn.CrossEntropyLoss()
-
-        mse = MSE(pred_points, true_points).to(self.device)
+        # MSE = nn.MSELoss()
+        # CE = nn.CrossEntropyLoss()
+        batch_size = pred_probs.size(0)
+        mse = F.mse_loss(pred_points.unsqueeze(0), true_points.unsqueeze(0), reduction='sum').to(self.device) / batch_size
+        # mse = MSE(pred_points, true_points).to(self.device)
         ce = torch.tensor(0, dtype=torch.float64).to(self.device)
 
         # No Distance
         if self.dist_type == "None":
             weight = torch.tensor([1]*pred_probs.shape[0]).to(self.device)
             for index, pred in enumerate(pred_probs):
-                ce += weight[index] * CE(pred.unsqueeze(0), true_class[index].unsqueeze(0))
+                # ce += weight[index] * CE(pred.unsqueeze(0), true_class[index].unsqueeze(0))
+                ce += weight[index] * F.cross_entropy(pred.unsqueeze(0), true_class[index].unsqueeze(0))
         # 1(:Offset) + Abs. Distance
         elif self.dist_type == "Absolute":
             weight = torch.abs(torch.subtract(torch.argmax(pred_probs, 1), true_class)) + 1
             for index, pred in enumerate(pred_probs):
-                ce += weight[index] * CE(pred.unsqueeze(0), true_class[index].unsqueeze(0))
+                # ce += weight[index] * CE(pred.unsqueeze(0), true_class[index].unsqueeze(0))
+                ce += weight[index] * F.cross_entropy(pred.unsqueeze(0), true_class[index].unsqueeze(0))
         # 1(:Offset) + Sqr. Distance
         elif self.dist_type == "Square":
             weight = torch.subtract(torch.argmax(pred_probs, 1), true_class) ** 2 + 1
             for index, pred in enumerate(pred_probs):
-                ce += weight[index] * CE(pred.unsqueeze(0), true_class[index].unsqueeze(0))
+                # ce += weight[index] * CE(pred.unsqueeze(0), true_class[index].unsqueeze(0))
+                ce += weight[index] * F.cross_entropy(pred.unsqueeze(0), true_class[index].unsqueeze(0))
         
-        ce = ce / pred_probs.shape[0]
+        ce = ce / batch_size
 
         loss = mse + self.alpha*ce
 
