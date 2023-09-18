@@ -13,6 +13,12 @@ pip install -r requirements/requirements.txt
 pip install gspread
 pip install --upgrade auth2client
 
-# Train/Test the model (example)
+# Train/Test the model (examples)
+sh scripts/test.sh
+sh scripts/valence_1s.sh
 sh scripts/valence_10s.sh
+sh scripts/valence_60s.sh
+sh scripts/arousal_1s.sh
+sh scripts/arousal_10s.sh
+sh scripts/arousal_60s.sh
 ```

@@ -88,7 +88,7 @@ def create_directory(directory):
     except OSError:
         print("Error: Failed to create the directory.")
 
-def save_google_spread(config, results):
+def save_google_spread(config, results, accuracies, epochs):
     """
         Save the RMSE results of 5-fold cross validation on the google spread sheet.
     """
@@ -128,13 +128,27 @@ def save_google_spread(config, results):
             + formula_offset[config["formula"]] + weight_offset[config["weight"]]
     offset = str(offset)
 
-    mean = np.mean(results)
+    mean_rmse = np.mean(results)
     worksheet.update_acell("G"+offset, np.round(mean, 4))
-    worksheet.update_acell("H"+offset, np.round(results[0], 4))
-    worksheet.update_acell("I"+offset, np.round(results[1], 4))
-    worksheet.update_acell("J"+offset, np.round(results[2], 4))
-    worksheet.update_acell("K"+offset, np.round(results[3], 4))
-    worksheet.update_acell("L"+offset, np.round(results[4], 4))
+    worksheet.update_acell("I"+offset, np.round(results[0], 4))
+    worksheet.update_acell("K"+offset, np.round(results[1], 4))
+    worksheet.update_acell("M"+offset, np.round(results[2], 4))
+    worksheet.update_acell("O"+offset, np.round(results[3], 4))
+    worksheet.update_acell("Q"+offset, np.round(results[4], 4))
+
+    mean_acc = np.mean(accuracies)
+    worksheet.update_acell("H"+offset, np.round(mean, 4))
+    worksheet.update_acell("J"+offset, np.round(accuracies[0], 4))
+    worksheet.update_acell("L"+offset, np.round(accuracies[1], 4))
+    worksheet.update_acell("N"+offset, np.round(accuracies[2], 4))
+    worksheet.update_acell("P"+offset, np.round(accuracies[3], 4))
+    worksheet.update_acell("R"+offset, np.round(accuracies[4], 4))
+
+    worksheet.update_acell("T"+offset, epochs[0])
+    worksheet.update_acell("U"+offset, epochs[1])
+    worksheet.update_acell("V"+offset, epochs[2])
+    worksheet.update_acell("W"+offset, epochs[3])
+    worksheet.update_acell("X"+offset, epochs[4])
 
 def save_google_spread_test_params(config, results, epochs, offset):
     """
@@ -178,8 +192,9 @@ def train_cv(config):
     # Results of each fold
     best_epochs = [0, 0, 0, 0, 0]
     results = [0, 0, 0, 0, 0]
+    accuracies = [0, 0, 0, 0, 0]
     
-    kfold = get_5fold(LABEL_PATH, file_length=config["file_length"])
+    kfold = get_5fold(LABEL_PATH, file_length=config["file_length"], subject=config["subject"])
     cal = Calculator(cal_type=config["formula"], n_classes=config["n_classes"])
 
     if config["feature_type"]=="EEG":
@@ -212,7 +227,7 @@ def train_cv(config):
         create_directory(save_path)
 
         f = open(os.path.join(save_path, 'output.csv'), 'w')
-        f.write('epoch,loss,MSE,CE,RMSE,v_loss,v_MSE,v_CE,v_RMSE\n')
+        f.write('epoch,loss,MSE,CE,RMSE,v_loss,v_MSE,v_CE,v_RMSE,ACC\n')
 
         print(f'\nTraining for fold {fold+1}')
 
@@ -288,12 +303,19 @@ def train_cv(config):
                 val_loss = 0
                 num_data = 0
 
+                acc = 0
+
                 for _, eeg, score, label_cls in tqdm(testloader, desc=f"Epoch {epoch+1} / VALIDATE", ncols=100, ascii=" =", leave=False):
 
                     true_points = torch.round(score).type("torch.FloatTensor").to(config["device"])
                     pred_probs = model(eeg.to(config["device"]))
                     pred_points = cal.calculate(pred_probs)
                     true_class = label_cls.type("torch.LongTensor").to(config["device"])
+
+                    pred_cls = 1 if pred_points >= 5 else 0
+                    true_cls = 1 if true_points >= 5 else 0
+                    if pred_cls==true_cls:
+                        acc+=1
 
                     del score, eeg, label_cls
                     torch.cuda.empty_cache()
@@ -315,10 +337,13 @@ def train_cv(config):
                 val_ce /= num_test_data
                 val_loss /= num_test_data
                 val_rmse = val_mse ** (1/2)
+                acc /= num_test_data
 
                 if epoch==0:
                     best_rmse_val = val_rmse
+                    best_acc = acc
                     results[fold] = best_rmse_val
+                    accuracies[fold] = best_acc
                     best_epochs[fold] = epoch+1
                     best_mse_val = val_mse
                     best_ce_val = val_ce
@@ -327,25 +352,28 @@ def train_cv(config):
                 else:
                     if val_rmse <= best_rmse_val:
                         best_rmse_val = val_rmse
+                        best_acc = acc
                         results[fold] = best_rmse_val
+                        accuracies[fold] = best_acc
                         best_epochs[fold] = epoch+1
                         best_mse_val = val_mse
                         best_ce_val = val_ce
                         best_loss_val = val_loss
                         torch.save(model.state_dict(), os.path.join(save_path, f'best_model_{epoch+1}.pt'))
-                print(f'\t[Validation] LOSS: {val_loss} | MSE: {val_mse} | CE: {val_ce} | RMSE: {val_rmse}\n\t[BEST] LOSS: {best_loss_val} | MSE: {best_mse_val} | CE: {best_ce_val} | RMSE: {best_rmse_val}')
-            f.write(f'{epoch+1},{train_loss},{train_mse},{train_ce},{train_rmse},{val_loss},{val_mse},{val_ce},{val_rmse}\n')
-            del val_mse, val_ce, val_loss, val_rmse, train_mse, train_ce, train_loss, train_rmse, num_test_data
+                print(f'\t[Validation] LOSS: {val_loss} | MSE: {val_mse} | CE: {val_ce} | RMSE: {val_rmse}\n\t[BEST] LOSS: {best_loss_val} | MSE: {best_mse_val} | CE: {best_ce_val} | RMSE: {best_rmse_val} | ACC: {best_acc}')
+            f.write(f'{epoch+1},{train_loss},{train_mse},{train_ce},{train_rmse},{val_loss},{val_mse},{val_ce},{val_rmse},{acc}\n')
+            del val_mse, val_ce, val_loss, val_rmse, train_mse, train_ce, train_loss, train_rmse, num_test_data, acc
             torch.cuda.empty_cache()
         f.close()   
         del optimizer, model, LOSS, trainloader, testloader, train_subsampler, test_subsampler
         torch.cuda.empty_cache()
         print(f"\nFold {fold+1}: {best_rmse_val}")
-    print(f"[Results]\nFold 1: {results[0]:.4f}\nFold 2: {results[1]:.4f}\nFold 3: {results[2]:.4f}\nFold 4: {results[3]:.4f}\nFold 5: {results[4]:.4f}")
+    print(f"[Results]\nFold 1: {results[0]:.4f}, {(accuracies[0]*100):.3f} %\nFold 2: {results[1]:.4f}, {(accuracies[1]*100):.3f} %\nFold 3: {results[2]:.4f}, {(accuracies[2]*100):.3f} %\nFold 4: {results[3]:.4f}, {(accuracies[3]*100):.3f} %\nFold 5: {results[4]:.4f}, {(accuracies[4]*100):.3f} %")
     print(f"Mean RMSE of 5 folds CV: {np.mean(results):.4f}")
+    print(f"Mean Accuracy of 5 folds CV: {(np.mean(accuracies)*100):.3f} %")
 
     if config["save_gspread"]:
-        save_google_spread(config, results)
+        save_google_spread(config, results, accuracies, best_epochs)
         print("Completely save the results on google spread sheet!!")
     else:
         print("Don't save the results on google spread sheet.")
@@ -367,7 +395,7 @@ def train_mse(config):
 
     results = [0, 0, 0, 0, 0]
     
-    kfold = get_5fold(LABEL_PATH, file_length=config["file_length"])
+    kfold = get_5fold(LABEL_PATH, file_length=config["file_length"], subject=config["subject"])
     SIGMOID = nn.Sigmoid()
 
     if config["feature_type"]=="EEG":
@@ -527,9 +555,10 @@ def test_cv(config):
     torch.cuda.empty_cache()
 
     results = [0, 0, 0, 0, 0]
+    accuracies = [0, 0, 0, 0, 0]
     weight_epochs = config["test_weights"].split(" ")
     
-    kfold = get_5fold(LABEL_PATH, file_length=config["file_length"])
+    kfold = get_5fold(LABEL_PATH, file_length=config["file_length"], subject=config["subject"])
     cal = Calculator(cal_type=config["formula"], n_classes=config["n_classes"])
 
     if config["feature_type"]=="EEG":
@@ -551,9 +580,11 @@ def test_cv(config):
     for fold, (_, test_idx) in enumerate(kfold):
         test_subsampler = torch.utils.data.SubsetRandomSampler(test_idx) 
         testloader = torch.utils.data.DataLoader(dataset, num_workers=4, batch_size=1, sampler=test_subsampler) 
+        
         num_test_data = len(testloader)
+        acc = 0
 
-        print(f'\nTraining for fold {fold+1}')
+        print(f'\nTest for fold {fold+1}')
 
         LOSS = Custom_Loss(device=config["device"], alpha=config["alpha"], dist_type=config["weight"])
         model = EmoticonNet(device=config["device"], n_classes=config["n_classes"], input_image=input_image, formula=config["formula"])
@@ -581,6 +612,11 @@ def test_cv(config):
                 pred_points = cal.calculate(pred_probs)
                 true_class = label_cls.type("torch.LongTensor").to(config["device"])
 
+                pred_cls = 1 if pred_points >= 5 else 0
+                true_cls = 1 if true_points >= 5 else 0
+                if pred_cls==true_cls:
+                    acc+=1
+
                 del score, eeg, label_cls
                 torch.cuda.empty_cache()
 
@@ -600,17 +636,19 @@ def test_cv(config):
             test_ce /= num_test_data
             test_loss /= num_test_data
             test_rmse = test_mse ** (1/2)
+            acc /= num_test_data
 
             results[fold] = test_rmse
+            accuracies[fold] = acc
             
-            print(f'\t[Test] LOSS: {test_loss} | MSE: {test_mse} | CE: {test_ce} | RMSE: {test_rmse}')
+            print(f'\t[Test] LOSS: {test_loss} | MSE: {test_mse} | CE: {test_ce} | RMSE: {test_rmse} | Accuracy: {acc}')
 
-        print(f"\nFold {fold+1}: {test_rmse}")
         del test_mse, test_ce, test_loss, test_rmse
         torch.cuda.empty_cache()
     
-    print(f"[Results]\nFold 1: {results[0]:.4f}\nFold 2: {results[1]:.4f}\nFold 3: {results[2]:.4f}\nFold 4: {results[3]:.4f}\nFold 5: {results[4]:.4f}")
+    print(f"[Results]\nFold 1: {results[0]:.4f}, {(accuracies[0]*100):.3f} %\nFold 2: {results[1]:.4f}, {(accuracies[1]*100):.3f} %\nFold 3: {results[2]:.4f}, {(accuracies[2]*100):.3f} %\nFold 4: {results[3]:.4f}, {(accuracies[3]*100):.3f} %\nFold 5: {results[4]:.4f}, {(accuracies[4]*100):.3f} %")
     print(f"Mean RMSE of 5 folds CV: {np.mean(results):.4f}")
+    print(f"Mean Accuracy of 5 folds CV: {(np.mean(accuracies)*100):.3f} %")
 
 def test_mse(config):
     """
@@ -623,9 +661,10 @@ def test_mse(config):
     torch.cuda.empty_cache()
 
     results = [0, 0, 0, 0, 0]
+    accuracies = [0, 0, 0, 0, 0]
     weight_epochs = config["test_weight"].split(" ")
     
-    kfold = get_5fold(LABEL_PATH, file_length=config["file_length"])
+    kfold = get_5fold(LABEL_PATH, file_length=config["file_length"], subject=config["subject"])
     SIGMOID = nn.Sigmoid()
 
     if config["feature_type"]=="EEG":
@@ -646,8 +685,10 @@ def test_mse(config):
     # Devide folds
     for fold, (_, test_idx) in enumerate(kfold):
         test_subsampler = torch.utils.data.SubsetRandomSampler(test_idx)
-
         testloader = torch.utils.data.DataLoader(dataset, num_workers=4, batch_size=1, sampler=test_subsampler) 
+
+        num_test_data = len(testloader)
+        acc = 0
 
         save_path = os.path.join(WEIGHTS_PATH, config["target"], config["feature_type"], str(config["file_length"])+'s', config["output_dir"], f'fold_{fold+1}')
         create_directory(save_path)
@@ -669,18 +710,17 @@ def test_mse(config):
         with torch.no_grad():
 
             test_loss = 0
-            num_data = 0
 
             for _, eeg, score, label_cls in tqdm(testloader, desc=f"Epoch {epoch+1} / VALIDATE", ncols=100, ascii=" =", leave=False):
 
-                # Batch size
-                num_batch = eeg.shape[0]
-                num_data += num_batch
-
                 true_points = torch.round(score).type("torch.FloatTensor").to(config["device"])
                 pred_probs = model(eeg.to(config["device"]))
-                pred_points = 30.0 * SIGMOID(pred_probs)
-                # true_class = label_cls.type("torch.LongTensor").to(config["device"])
+                pred_points = 8 * pred_probs + 1
+
+                pred_cls = 1 if pred_points >= 5 else 0
+                true_cls = 1 if true_points >= 5 else 0
+                if pred_cls==true_cls:
+                    acc+=1
 
                 del score, eeg, label_cls
                 torch.cuda.empty_cache()
@@ -691,23 +731,28 @@ def test_mse(config):
                 del pred_probs, pred_points, true_points
                 torch.cuda.empty_cache()
                 
-                test_loss += loss.item()*num_batch
+                test_loss += loss.item()
 
                 del loss, num_batch
                 torch.cuda.empty_cache()
             
-            test_loss /= num_data
+            test_loss /= num_test_data
             test_rmse = test_loss ** (1/2)
+            acc /= num_test_data
 
-            print(f'\t[Test] LOSS: {test_loss} | RMSE: {test_rmse}')
+            results[fold] = test_rmse
+            accuracies[fold] = acc
 
-        print(f"\nFold {fold+1}: {test_rmse}")
+            print(f'\t[Test] LOSS: {test_loss} | RMSE: {test_rmse} | Accuracy: {acc}')
+
+        # print(f"\nFold {fold+1}: {test_rmse}")
 
         del test_loss, test_rmse
         torch.cuda.empty_cache()
 
-    print(f"[Results]\nFold 1: {results[0]:.4f}\nFold 2: {results[1]:.4f}\nFold 3: {results[2]:.4f}\nFold 4: {results[3]:.4f}\nFold 5: {results[4]:.4f}")
+    print(f"[Results]\nFold 1: {results[0]:.4f}, {(accuracies[0]*100):.3f} %\nFold 2: {results[1]:.4f}, {(accuracies[1]*100):.3f} %\nFold 3: {results[2]:.4f}, {(accuracies[2]*100):.3f} %\nFold 4: {results[3]:.4f}, {(accuracies[3]*100):.3f} %\nFold 5: {results[4]:.4f}, {(accuracies[4]*100):.3f} %")
     print(f"Mean RMSE of 5 folds CV: {np.mean(results):.4f}")
+    print(f"Mean Accuracy of 5 folds CV: {(np.mean(accuracies)*100):.3f} %")
 
 if __name__=="__main__":
 
@@ -717,6 +762,7 @@ if __name__=="__main__":
     parser.add_argument('--gspread_offset', type=int, default=None, help='Select offset to save the results on google spread sheet')
 
     parser.add_argument('--mode', type=str, default='Train', choices=['Train', 'Test'], help='Select the Mode')
+    parser.add_argument('--subject', type=int, default=None, help='Select a subject to train or test the model(Subject-Independent Model)')
     parser.add_argument('--epochs', type=int, default=1000, help='Set the number of epochs')
     parser.add_argument('--batch_size', type=int, default=8, help='Set the batch size')
     parser.add_argument('--optimizer', type=str, default='SGD', choices=['SGD', 'Adam', 'AdamW'], help='Select the Optimizer')
@@ -751,6 +797,7 @@ if __name__=="__main__":
         "gspread_offset": args.gspread_offset,
 
         "mode": args.mode,
+        "subject": args.subject,
         "device": args.device,
         "epochs": args.epochs,
         "batch": args.batch_size,
@@ -785,8 +832,9 @@ if __name__=="__main__":
     }
 
     print("\n------------ Options ------------")
-    print("--TEST PARAMS:", args.test_params)
+    print("--Test Parameters:", args.test_params)
     print("--Mode:", args.mode)
+    print("--Subject:", args.subject)
     print("--Target:", args.target)
     print("--Epochs:", args.epochs)
     print("--Batch Size:", args.batch_size)
@@ -812,8 +860,9 @@ if __name__=="__main__":
             train_cv(config)
 
         print("\n------------ Options ------------")
-        print("--TEST PARAMS:", args.test_params)
+        print("--Test Parameters:", args.test_params)
         print("--Mode:", args.mode)
+        print("--Subject:", args.subject)
         print("--Target:", args.target)
         print("--Epochs:", args.epochs)
         print("--Batch Size:", args.batch_size)

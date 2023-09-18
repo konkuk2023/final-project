@@ -16,18 +16,29 @@ from tqdm import tqdm
 import warnings
 warnings.filterwarnings('ignore')
 
-def get_5fold(label_path, file_length=10):
+def get_5fold(label_path, file_length=10, subject=None):
     num_division = 60 // file_length
     label = pd.read_csv(label_path)
     label = pd.concat([label for _ in range(num_division)]).sort_values(by="Unnamed: 0").reset_index(drop=True)
     trial = label.iloc[:,0].str.split("_trial").str[1].astype('int64')
-    test_indexes = [
+    sub = label.iloc[:,0].str.split("_trial").str[0].str.replace("s", "").astype('int64')
+    
+    if subject:
+        test_indexes = [
+        ([idx for idx, s in zip(range(len(trial)), sub) if trial[idx] not in range(1, 9) and s==subject], [idx for idx, s in zip(range(len(trial)), sub) if trial[idx] in range(1, 9) and s==subject]),
+        ([idx for idx, s in zip(range(len(trial)), sub) if trial[idx] not in range(9, 17) and s==subject], [idx for idx, s in zip(range(len(trial)), sub) if trial[idx] in range(9, 17) and s==subject]),
+        ([idx for idx, s in zip(range(len(trial)), sub) if trial[idx] not in range(17, 25) and s==subject], [idx for idx, s in zip(range(len(trial)), sub) if trial[idx] in range(17, 25) and s==subject]),
+        ([idx for idx, s in zip(range(len(trial)), sub) if trial[idx] not in range(25, 33) and s==subject], [idx for idx, s in zip(range(len(trial)), sub) if trial[idx] in range(25, 33) and s==subject]),
+        ([idx for idx, s in zip(range(len(trial)), sub) if trial[idx] not in range(33, 41) and s==subject], [idx for idx, s in zip(range(len(trial)), sub) if trial[idx] in range(33, 41) and s==subject])]
+
+    else:
+        test_indexes = [
         ([idx for idx in range(len(trial)) if trial[idx] not in range(1, 9)], [idx for idx in range(len(trial)) if trial[idx] in range(1, 9)]),
         ([idx for idx in range(len(trial)) if trial[idx] not in range(9, 17)], [idx for idx in range(len(trial)) if trial[idx] in range(9, 17)]),
         ([idx for idx in range(len(trial)) if trial[idx] not in range(17, 25)], [idx for idx in range(len(trial)) if trial[idx] in range(17, 25)]),
         ([idx for idx in range(len(trial)) if trial[idx] not in range(25, 33)], [idx for idx in range(len(trial)) if trial[idx] in range(25, 33)]),
         ([idx for idx in range(len(trial)) if trial[idx] not in range(33, 41)], [idx for idx in range(len(trial)) if trial[idx] in range(33, 41)])]
-    
+
     return test_indexes
 
 class DEAP_Full(Dataset):
@@ -114,13 +125,17 @@ if __name__=="__main__":
     # print(len(dataloader))
     # print(dataloader.__len__)
 
-    samples = get_5fold(LABEL_PATH, 1)
+    samples = get_5fold(LABEL_PATH, 10, 3)
     for train_idx, test_idx in tqdm(samples):
         train_subsampler = torch.utils.data.SubsetRandomSampler(train_idx)
         test_subsampler = torch.utils.data.SubsetRandomSampler(test_idx)
 
-        trainloader = torch.utils.data.DataLoader(dataset, num_workers=8, batch_size=1024, sampler=train_subsampler) 
-        testloader = torch.utils.data.DataLoader(dataset, num_workers=4, batch_size=1024, sampler=test_subsampler) 
+        print("---------------------")
+        print(train_idx)
+        print(test_idx)
+
+        trainloader = torch.utils.data.DataLoader(dataset, num_workers=8, batch_size=1, sampler=train_subsampler) 
+        testloader = torch.utils.data.DataLoader(dataset, num_workers=4, batch_size=1, sampler=test_subsampler) 
 
         print(len(trainloader))
         print(len(testloader))
