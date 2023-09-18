@@ -280,6 +280,8 @@ def train_cv(config):
 
             model.eval()
             with torch.no_grad():
+                
+                num_test_data = len(testloader)
 
                 val_mse = 0
                 val_ce = 0
@@ -287,10 +289,6 @@ def train_cv(config):
                 num_data = 0
 
                 for _, eeg, score, label_cls in tqdm(testloader, desc=f"Epoch {epoch+1} / VALIDATE", ncols=100, ascii=" =", leave=False):
-
-                    # Batch size
-                    num_batch = eeg.shape[0]
-                    num_data += num_batch
 
                     true_points = torch.round(score).type("torch.FloatTensor").to(config["device"])
                     pred_probs = model(eeg.to(config["device"]))
@@ -306,16 +304,16 @@ def train_cv(config):
                     del pred_probs, true_class, pred_points, true_points
                     torch.cuda.empty_cache()
                     
-                    val_mse += mse.item()*num_batch
-                    val_ce += ce.item()*num_batch
-                    val_loss += loss.item()*num_batch
+                    val_mse += mse.item()
+                    val_ce += ce.item()
+                    val_loss += loss.item()
 
-                    del loss, mse, ce, num_batch
+                    del loss, mse, ce
                     torch.cuda.empty_cache()
                 
-                val_mse /= num_data
-                val_ce /= num_data
-                val_loss /= num_data
+                val_mse /= num_test_data
+                val_ce /= num_test_data
+                val_loss /= num_test_data
                 val_rmse = val_mse ** (1/2)
 
                 if epoch==0:
@@ -337,7 +335,7 @@ def train_cv(config):
                         torch.save(model.state_dict(), os.path.join(save_path, f'best_model_{epoch+1}.pt'))
                 print(f'\t[Validation] LOSS: {val_loss} | MSE: {val_mse} | CE: {val_ce} | RMSE: {val_rmse}\n\t[BEST] LOSS: {best_loss_val} | MSE: {best_mse_val} | CE: {best_ce_val} | RMSE: {best_rmse_val}')
             f.write(f'{epoch+1},{train_loss},{train_mse},{train_ce},{train_rmse},{val_loss},{val_mse},{val_ce},{val_rmse}\n')
-            del val_mse, val_ce, val_loss, val_rmse, train_mse, train_ce, train_loss, train_rmse
+            del val_mse, val_ce, val_loss, val_rmse, train_mse, train_ce, train_loss, train_rmse, num_test_data
             torch.cuda.empty_cache()
         f.close()   
         del optimizer, model, LOSS, trainloader, testloader, train_subsampler, test_subsampler
@@ -552,7 +550,7 @@ def test_cv(config):
     # Devide folds
     for fold, (_, test_idx) in enumerate(kfold):
         test_subsampler = torch.utils.data.SubsetRandomSampler(test_idx) 
-        testloader = torch.utils.data.DataLoader(dataset, num_workers=4, batch_size=64, sampler=test_subsampler) 
+        testloader = torch.utils.data.DataLoader(dataset, num_workers=4, batch_size=1, sampler=test_subsampler) 
         num_test_data = len(testloader)
 
         print(f'\nTraining for fold {fold+1}')
@@ -560,8 +558,11 @@ def test_cv(config):
         LOSS = Custom_Loss(device=config["device"], alpha=config["alpha"], dist_type=config["weight"])
         model = EmoticonNet(device=config["device"], n_classes=config["n_classes"], input_image=input_image, formula=config["formula"])
         ep = weight_epochs[fold]
-        model.load_state_dict(torch.load(os.path.join(WEIGHTS_PATH, config["target"], config["feature_type"], str(config["file_length"])+'s', config["output_dir"], f'ALPHA_{alpha}', f'fold_{fold+1}', f'best_model_{ep}.pt')))
-        # print(f"EPOCH: {ep}")
+        if config["test_params"]:
+            model.load_state_dict(torch.load(os.path.join(WEIGHTS_PATH, config["target"], 'TEST2', str(config["file_length"])+'s', config["output_dir"], f'fold_{fold+1}', f'best_model_{ep}.pt')))
+        else:
+            model.load_state_dict(torch.load(os.path.join(WEIGHTS_PATH, config["target"], config["feature_type"], str(config["file_length"])+'s', config["output_dir"], f'ALPHA_{alpha}', f'fold_{fold+1}', f'best_model_{ep}.pt')))
+
         print(f"[INFO] Target:{target}||Formula:{formula}||Loss:{weight}||Alpha:{alpha}||BaseMean:{basemean}||Fold:{fold+1}")
         torch.cuda.empty_cache()
 
@@ -575,40 +576,29 @@ def test_cv(config):
 
             for _, eeg, score, label_cls in tqdm(testloader, desc=f"TEST", ncols=100, ascii=" =", leave=False):
 
-                # Batch size
-                num_batch = eeg.shape[0]
-                num_data += num_batch
-
                 true_points = torch.round(score).type("torch.FloatTensor").to(config["device"])
                 pred_probs = model(eeg.to(config["device"]))
                 pred_points = cal.calculate(pred_probs)
                 true_class = label_cls.type("torch.LongTensor").to(config["device"])
-
-                # print(true_points.shape)
-                # print(pred_points.shape)
 
                 del score, eeg, label_cls
                 torch.cuda.empty_cache()
 
                 # Calculate Loss Function
                 loss, mse, ce = LOSS(pred_probs, true_class, pred_points, true_points)
-                # print(loss)
-                # print(mse)
-                # print(ce)
                 del pred_probs, true_class, pred_points, true_points
                 torch.cuda.empty_cache()
                 
-                test_mse += mse.item()*num_batch
-                # print(test_mse)
-                test_ce += ce.item()*num_batch
-                test_loss += loss.item()*num_batch
+                test_mse += mse.item()
+                test_ce += ce.item()
+                test_loss += loss.item()
 
                 del loss, mse, ce
                 torch.cuda.empty_cache()
             
-            test_mse /= num_data
-            test_ce /= num_data
-            test_loss /= num_data
+            test_mse /= num_test_data
+            test_ce /= num_test_data
+            test_loss /= num_test_data
             test_rmse = test_mse ** (1/2)
 
             results[fold] = test_rmse

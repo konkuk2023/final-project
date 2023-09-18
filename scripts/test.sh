@@ -1,0 +1,22 @@
+python ./main.py \
+    --mode Test \
+    --test_params True \
+    --epochs 0 \
+    --batch_size 1 \
+    --dataset DEAP \
+    --optimizer Adam \
+    --learning_rate 1e-5 \
+    --weight_decay 1e-4 \
+    --beta1 0.9 \
+    --beta2 0.999 \
+    --target valence \
+    --basemean True \
+    --alpha 1 \
+    --feature DE \
+    --file_length 60 \
+    --n_classes 9 \
+    --device cpu \
+    --formula Expectation \
+    --weight None \
+    --output_dir 128_1e-5 \
+    --test_weights "36 46 68 199 197" 
