@@ -10,7 +10,7 @@ python ./main.py \
     --method CSV \
     --save_gspread True \
     --epochs 200 \
-    --batch_size 2048 \
+    --batch_size 256 \
     --dataset DEAP \
     --optimizer Adam \
     --learning_rate 1e-5 \
@@ -21,7 +21,7 @@ python ./main.py \
     --basemean ${BASEMEAN} \
     --alpha 1 \
     --feature DE \
-    --file_length 1 \
+    --file_length 6 \
     --n_classes ${N_CLASSES} \
     --device ${DEVICE} \
     --formula ${FORMULA} \

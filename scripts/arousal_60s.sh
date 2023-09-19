@@ -7,6 +7,7 @@ OUTPUT_DIR=$FORMULA"_"$WEIGHT
 
 python ./main.py \
     --mode Train \
+    --method CSV \
     --save_gspread True \
     --epochs 500 \
     --batch_size 128 \

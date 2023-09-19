@@ -8,6 +8,7 @@ OUTPUT_DIR=$BATCH"_"$LR
 
 python ./main.py \
     --test_params True \
+    --method CSI \
     --gspread_offset ${OFFSET} \
     --mode Train \
     --epochs 200 \

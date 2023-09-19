@@ -1,5 +1,6 @@
 python ./main.py \
     --mode Test \
+    --folds 5 \
     --test_params True \
     --epochs 0 \
     --batch_size 1 \

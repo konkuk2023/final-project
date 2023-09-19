@@ -16,28 +16,122 @@ from tqdm import tqdm
 import warnings
 warnings.filterwarnings('ignore')
 
-def get_5fold(label_path, file_length=10, subject=None):
-    num_division = 60 // file_length
+"""
+    Method
+    - SD: subject dependent
+    - CSV: cross subject - video
+    - CSI: cross subject - interval
+    - US: unseen subject
+"""
+def get_5fold(label_path, file_length=10, method="CSI", subject=None):
+    num_division = 60 // file_length    # 60 // 6 = 10
     label = pd.read_csv(label_path)
     label = pd.concat([label for _ in range(num_division)]).sort_values(by="Unnamed: 0").reset_index(drop=True)
     trial = label.iloc[:,0].str.split("_trial").str[1].astype('int64')
     sub = label.iloc[:,0].str.split("_trial").str[0].str.replace("s", "").astype('int64')
     
-    if subject:
+    if method=="SD":
+        print(f"Experiment(5-fold) only for {subject} Subject will be conducted!!")
         test_indexes = [
         ([idx for idx, s in zip(range(len(trial)), sub) if trial[idx] not in range(1, 9) and s==subject], [idx for idx, s in zip(range(len(trial)), sub) if trial[idx] in range(1, 9) and s==subject]),
         ([idx for idx, s in zip(range(len(trial)), sub) if trial[idx] not in range(9, 17) and s==subject], [idx for idx, s in zip(range(len(trial)), sub) if trial[idx] in range(9, 17) and s==subject]),
         ([idx for idx, s in zip(range(len(trial)), sub) if trial[idx] not in range(17, 25) and s==subject], [idx for idx, s in zip(range(len(trial)), sub) if trial[idx] in range(17, 25) and s==subject]),
         ([idx for idx, s in zip(range(len(trial)), sub) if trial[idx] not in range(25, 33) and s==subject], [idx for idx, s in zip(range(len(trial)), sub) if trial[idx] in range(25, 33) and s==subject]),
         ([idx for idx, s in zip(range(len(trial)), sub) if trial[idx] not in range(33, 41) and s==subject], [idx for idx, s in zip(range(len(trial)), sub) if trial[idx] in range(33, 41) and s==subject])]
-
-    else:
+    
+    elif method=="CSV":
+        print("Cross-Subject(Video unit) Experiment(5-fold) will be conducted!!")
         test_indexes = [
         ([idx for idx in range(len(trial)) if trial[idx] not in range(1, 9)], [idx for idx in range(len(trial)) if trial[idx] in range(1, 9)]),
         ([idx for idx in range(len(trial)) if trial[idx] not in range(9, 17)], [idx for idx in range(len(trial)) if trial[idx] in range(9, 17)]),
         ([idx for idx in range(len(trial)) if trial[idx] not in range(17, 25)], [idx for idx in range(len(trial)) if trial[idx] in range(17, 25)]),
         ([idx for idx in range(len(trial)) if trial[idx] not in range(25, 33)], [idx for idx in range(len(trial)) if trial[idx] in range(25, 33)]),
         ([idx for idx in range(len(trial)) if trial[idx] not in range(33, 41)], [idx for idx in range(len(trial)) if trial[idx] in range(33, 41)])]
+
+    elif method=="CSI":
+        print("Cross-Subject(Interval unit) Experiment(5-fold) will be conducted!!")
+        test_indexes = [
+        ([idx for idx in range(len(trial)) if idx % 5 != 0], [idx for idx in range(len(trial)) if idx % 5 == 0]),
+        ([idx for idx in range(len(trial)) if idx % 5 != 1], [idx for idx in range(len(trial)) if idx % 5 == 1]),
+        ([idx for idx in range(len(trial)) if idx % 5 != 2], [idx for idx in range(len(trial)) if idx % 5 == 2]),
+        ([idx for idx in range(len(trial)) if idx % 5 != 3], [idx for idx in range(len(trial)) if idx % 5 == 3]),
+        ([idx for idx in range(len(trial)) if idx % 5 != 4], [idx for idx in range(len(trial)) if idx % 5 == 4])]
+
+    elif method=="US":
+        print("Unseen-Subject Experiment(5-fold) will be conducted!!")
+        test_indexes = [
+        ([idx for idx in range(len(sub)) if sub[idx] not in range(1, 7)], [idx for idx in range(len(sub)) if sub[idx] in range(1, 7)]),
+        ([idx for idx in range(len(sub)) if sub[idx] not in range(7, 13)], [idx for idx in range(len(sub)) if sub[idx] in range(7, 13)]),
+        ([idx for idx in range(len(sub)) if sub[idx] not in range(13, 19)], [idx for idx in range(len(sub)) if sub[idx] in range(13, 19)]),
+        ([idx for idx in range(len(sub)) if sub[idx] not in range(19, 26)], [idx for idx in range(len(sub)) if sub[idx] in range(19, 26)]),
+        ([idx for idx in range(len(sub)) if sub[idx] not in range(26, 33)], [idx for idx in range(len(sub)) if sub[idx] in range(26, 33)])]
+    
+    return test_indexes
+
+def get_10fold(label_path, file_length=10, method="CSI", subject=None):
+    num_division = 60 // file_length
+    label = pd.read_csv(label_path)
+    label = pd.concat([label for _ in range(num_division)]).sort_values(by="Unnamed: 0").reset_index(drop=True)
+    trial = label.iloc[:,0].str.split("_trial").str[1].astype('int64')
+    sub = label.iloc[:,0].str.split("_trial").str[0].str.replace("s", "").astype('int64')
+    
+    if method=="SD":
+        print(f"Experiment(10-fold) only for {subject} Subject will be conducted!!")
+        test_indexes = [
+        ([idx for idx, s in zip(range(len(trial)), sub) if trial[idx] not in range(1, 5) and s==subject], [idx for idx, s in zip(range(len(trial)), sub) if trial[idx] in range(1, 5) and s==subject]),
+        ([idx for idx, s in zip(range(len(trial)), sub) if trial[idx] not in range(5, 9) and s==subject], [idx for idx, s in zip(range(len(trial)), sub) if trial[idx] in range(5, 9) and s==subject]),
+        ([idx for idx, s in zip(range(len(trial)), sub) if trial[idx] not in range(9, 13) and s==subject], [idx for idx, s in zip(range(len(trial)), sub) if trial[idx] in range(9, 13) and s==subject]),
+        ([idx for idx, s in zip(range(len(trial)), sub) if trial[idx] not in range(13, 17) and s==subject], [idx for idx, s in zip(range(len(trial)), sub) if trial[idx] in range(13, 17) and s==subject]),
+        ([idx for idx, s in zip(range(len(trial)), sub) if trial[idx] not in range(17, 21) and s==subject], [idx for idx, s in zip(range(len(trial)), sub) if trial[idx] in range(17, 21) and s==subject]),
+        ([idx for idx, s in zip(range(len(trial)), sub) if trial[idx] not in range(21, 25) and s==subject], [idx for idx, s in zip(range(len(trial)), sub) if trial[idx] in range(21, 25) and s==subject]),
+        ([idx for idx, s in zip(range(len(trial)), sub) if trial[idx] not in range(25, 29) and s==subject], [idx for idx, s in zip(range(len(trial)), sub) if trial[idx] in range(25, 29) and s==subject]),
+        ([idx for idx, s in zip(range(len(trial)), sub) if trial[idx] not in range(29, 33) and s==subject], [idx for idx, s in zip(range(len(trial)), sub) if trial[idx] in range(29, 33) and s==subject]),
+        ([idx for idx, s in zip(range(len(trial)), sub) if trial[idx] not in range(33, 37) and s==subject], [idx for idx, s in zip(range(len(trial)), sub) if trial[idx] in range(33, 37) and s==subject]),
+        ([idx for idx, s in zip(range(len(trial)), sub) if trial[idx] not in range(37, 41) and s==subject], [idx for idx, s in zip(range(len(trial)), sub) if trial[idx] in range(37, 41) and s==subject])]
+
+    elif method=="CSV":
+        print("Cross-Subject(Video unit) Experiment(5-fold) will be conducted!!")
+        test_indexes = [
+        ([idx for idx in range(len(trial)) if trial[idx] not in range(1, 5)], [idx for idx in range(len(trial)) if trial[idx] in range(1, 5)]),
+        ([idx for idx in range(len(trial)) if trial[idx] not in range(5, 9)], [idx for idx in range(len(trial)) if trial[idx] in range(5, 9)]),
+        ([idx for idx in range(len(trial)) if trial[idx] not in range(9, 13)], [idx for idx in range(len(trial)) if trial[idx] in range(9, 13)]),
+        ([idx for idx in range(len(trial)) if trial[idx] not in range(13, 17)], [idx for idx in range(len(trial)) if trial[idx] in range(13, 17)]),
+        ([idx for idx in range(len(trial)) if trial[idx] not in range(17, 21)], [idx for idx in range(len(trial)) if trial[idx] in range(17, 21)]),
+        ([idx for idx in range(len(trial)) if trial[idx] not in range(21, 25)], [idx for idx in range(len(trial)) if trial[idx] in range(21, 25)]),
+        ([idx for idx in range(len(trial)) if trial[idx] not in range(25, 29)], [idx for idx in range(len(trial)) if trial[idx] in range(25, 29)]),
+        ([idx for idx in range(len(trial)) if trial[idx] not in range(29, 33)], [idx for idx in range(len(trial)) if trial[idx] in range(29, 33)]),
+        ([idx for idx in range(len(trial)) if trial[idx] not in range(33, 37)], [idx for idx in range(len(trial)) if trial[idx] in range(33, 37)]),
+        ([idx for idx in range(len(trial)) if trial[idx] not in range(37, 41)], [idx for idx in range(len(trial)) if trial[idx] in range(37, 41)])]
+    
+    elif method=="CSI":
+        print("Cross-Subject(Interval unit) Experiment(5-fold) will be conducted!!")
+        test_indexes = [
+        ([idx for idx in range(len(trial)) if idx % 10 != 0], [idx for idx in range(len(trial)) if idx % 10 == 0]),
+        ([idx for idx in range(len(trial)) if idx % 10 != 1], [idx for idx in range(len(trial)) if idx % 10 == 1]),
+        ([idx for idx in range(len(trial)) if idx % 10 != 2], [idx for idx in range(len(trial)) if idx % 10 == 2]),
+        ([idx for idx in range(len(trial)) if idx % 10 != 3], [idx for idx in range(len(trial)) if idx % 10 == 3]),
+        ([idx for idx in range(len(trial)) if idx % 10 != 4], [idx for idx in range(len(trial)) if idx % 10 == 4]),
+        ([idx for idx in range(len(trial)) if idx % 10 != 5], [idx for idx in range(len(trial)) if idx % 10 == 5]),
+        ([idx for idx in range(len(trial)) if idx % 10 != 6], [idx for idx in range(len(trial)) if idx % 10 == 6]),
+        ([idx for idx in range(len(trial)) if idx % 10 != 7], [idx for idx in range(len(trial)) if idx % 10 == 7]),
+        ([idx for idx in range(len(trial)) if idx % 10 != 8], [idx for idx in range(len(trial)) if idx % 10 == 8]),
+        ([idx for idx in range(len(trial)) if idx % 10 != 9], [idx for idx in range(len(trial)) if idx % 10 == 9])]
+    
+    elif method=="US":
+        print("Unseen-Subject Experiment(10-fold) will be conducted!!")
+        test_indexes = [
+        ([idx for idx in range(len(sub)) if sub[idx] not in range(1, 4)], [idx for idx in range(len(sub)) if sub[idx] in range(1, 4)]),
+        ([idx for idx in range(len(sub)) if sub[idx] not in range(4, 7)], [idx for idx in range(len(sub)) if sub[idx] in range(4, 7)]),
+        ([idx for idx in range(len(sub)) if sub[idx] not in range(7, 10)], [idx for idx in range(len(sub)) if sub[idx] in range(7, 10)]),
+        ([idx for idx in range(len(sub)) if sub[idx] not in range(10, 13)], [idx for idx in range(len(sub)) if sub[idx] in range(10, 13)]),
+        ([idx for idx in range(len(sub)) if sub[idx] not in range(13, 16)], [idx for idx in range(len(sub)) if sub[idx] in range(13, 16)]),
+        ([idx for idx in range(len(sub)) if sub[idx] not in range(16, 19)], [idx for idx in range(len(sub)) if sub[idx] in range(16, 19)]),
+        ([idx for idx in range(len(sub)) if sub[idx] not in range(19, 22)], [idx for idx in range(len(sub)) if sub[idx] in range(19, 22)]),
+        ([idx for idx in range(len(sub)) if sub[idx] not in range(22, 25)], [idx for idx in range(len(sub)) if sub[idx] in range(22, 25)]),
+        ([idx for idx in range(len(sub)) if sub[idx] not in range(25, 29)], [idx for idx in range(len(sub)) if sub[idx] in range(25, 29)]),
+        ([idx for idx in range(len(sub)) if sub[idx] not in range(29, 33)], [idx for idx in range(len(sub)) if sub[idx] in range(29, 33)])]
+
+    
 
     return test_indexes
 
@@ -125,7 +219,7 @@ if __name__=="__main__":
     # print(len(dataloader))
     # print(dataloader.__len__)
 
-    samples = get_5fold(LABEL_PATH, 10, 3)
+    samples = get_10fold(label_path=LABEL_PATH, file_length=60, method="CSI", subject=None)
     for train_idx, test_idx in tqdm(samples):
         train_subsampler = torch.utils.data.SubsetRandomSampler(train_idx)
         test_subsampler = torch.utils.data.SubsetRandomSampler(test_idx)
