@@ -17,6 +17,7 @@ import argparse
 from tqdm import tqdm
 import numpy as np
 import pandas as pd
+from time import time, gmtime
 from sklearn.model_selection import KFold
 import gspread
 from oauth2client.service_account import ServiceAccountCredentials
@@ -133,7 +134,7 @@ def save_google_spread(config, results, accuracies, epochs):
     offset = str(offset)
 
     mean_rmse = np.mean(results)
-    worksheet.update_acell("G"+offset, np.round(mean, 4))
+    worksheet.update_acell("G"+offset, np.round(mean_rmse, 4))
     worksheet.update_acell("I"+offset, np.round(results[0], 4))
     worksheet.update_acell("K"+offset, np.round(results[1], 4))
     worksheet.update_acell("M"+offset, np.round(results[2], 4))
@@ -141,7 +142,58 @@ def save_google_spread(config, results, accuracies, epochs):
     worksheet.update_acell("Q"+offset, np.round(results[4], 4))
 
     mean_acc = np.mean(accuracies)
-    worksheet.update_acell("H"+offset, np.round(mean, 4))
+    worksheet.update_acell("H"+offset, np.round(mean_acc, 4))
+    worksheet.update_acell("J"+offset, np.round(accuracies[0], 4))
+    worksheet.update_acell("L"+offset, np.round(accuracies[1], 4))
+    worksheet.update_acell("N"+offset, np.round(accuracies[2], 4))
+    worksheet.update_acell("P"+offset, np.round(accuracies[3], 4))
+    worksheet.update_acell("R"+offset, np.round(accuracies[4], 4))
+
+    worksheet.update_acell("T"+offset, epochs[0])
+    worksheet.update_acell("U"+offset, epochs[1])
+    worksheet.update_acell("V"+offset, epochs[2])
+    worksheet.update_acell("W"+offset, epochs[3])
+    worksheet.update_acell("X"+offset, epochs[4])
+
+def save_google_spread_mse(config, results, accuracies, epochs):
+    """
+        Save the RMSE results of 5-fold cross validation on the google spread sheet.
+    """
+
+    base_offset = 2
+    method_offset = {
+        "CSV": 0,
+        "CSI": 6
+    }
+    target_offset = {
+        "valence": 0,
+        "arousal": 3
+    }
+    length_offset = {
+        60: 2,
+        6: 1,
+        1: 0
+    }
+
+    scope = [SCOPE1, SCOPE2]
+    credentials = ServiceAccountCredentials.from_json_keyfile_name(KEY_FILE, scope)
+    gc = gspread.authorize(credentials)
+    doc = gc.open_by_url(SHEET_URL)
+    worksheet = doc.worksheet("MSE")
+
+    offset = base_offset + method_offset[config["method"]] + target_offset[config["target"]] + length_offset[config["file_length"]]
+    offset = str(offset)
+
+    mean_rmse = np.mean(results)
+    worksheet.update_acell("G"+offset, np.round(mean_rmse, 4))
+    worksheet.update_acell("I"+offset, np.round(results[0], 4))
+    worksheet.update_acell("K"+offset, np.round(results[1], 4))
+    worksheet.update_acell("M"+offset, np.round(results[2], 4))
+    worksheet.update_acell("O"+offset, np.round(results[3], 4))
+    worksheet.update_acell("Q"+offset, np.round(results[4], 4))
+
+    mean_acc = np.mean(accuracies)
+    worksheet.update_acell("H"+offset, np.round(mean_acc, 4))
     worksheet.update_acell("J"+offset, np.round(accuracies[0], 4))
     worksheet.update_acell("L"+offset, np.round(accuracies[1], 4))
     worksheet.update_acell("N"+offset, np.round(accuracies[2], 4))
@@ -184,6 +236,7 @@ def train_cv(config):
     """
         Function to train a model which uses Expectation Formula or Bernoulli Formula by 5-fold cross validation.
     """
+    start = time()
     # Basic Informations
     target = config["target"]
     formula = config["formula"]
@@ -208,16 +261,16 @@ def train_cv(config):
         input_length = int(7680 / (60//config["file_length"]))
         input_image = torch.zeros(1, input_length, 1, 9, 9)
         if config["basemean"]:
-            dataset = DEAP(data_dir=W_BASEMEAN_DATA_PATH, label_path=LABEL_PATH, target=config["target"], file_length=config["file_length"], feature_type="EEG")
+            dataset = DEAP(data_dir=W_BASEMEAN_DATA_PATH, label_path=LABEL_PATH, target=config["target"], file_length=config["file_length"], feature_type="EEG", n_classes=config["n_classes"])
         else:
-            dataset = DEAP(data_dir=WO_BASEMEAN_DATA_PATH, label_path=LABEL_PATH, target=config["target"], file_length=config["file_length"], feature_type="EEG")
+            dataset = DEAP(data_dir=WO_BASEMEAN_DATA_PATH, label_path=LABEL_PATH, target=config["target"], file_length=config["file_length"], feature_type="EEG", n_classes=config["n_classes"])
     elif config["feature_type"]=="DE":
         input_length = int(60 / (60//config["file_length"]))
         input_image = torch.zeros(1, input_length, 1, 9, 9)
         if config["basemean"]:
-            dataset = DEAP(data_dir=DE_W_BASEMEAN_DATA_PATH, label_path=LABEL_PATH, target=config["target"], file_length=config["file_length"], feature_type="DE")
+            dataset = DEAP(data_dir=DE_W_BASEMEAN_DATA_PATH, label_path=LABEL_PATH, target=config["target"], file_length=config["file_length"], feature_type="DE", n_classes=config["n_classes"])
         else:
-            dataset = DEAP(data_dir=DE_WO_BASEMEAN_DATA_PATH, label_path=LABEL_PATH, target=config["target"], file_length=config["file_length"], feature_type="DE")
+            dataset = DEAP(data_dir=DE_WO_BASEMEAN_DATA_PATH, label_path=LABEL_PATH, target=config["target"], file_length=config["file_length"], feature_type="DE", n_classes=config["n_classes"])
 
     # Devide folds
     for fold, (train_idx, test_idx) in enumerate(kfold):
@@ -228,7 +281,7 @@ def train_cv(config):
         testloader = torch.utils.data.DataLoader(dataset, num_workers=2, batch_size=1, sampler=test_subsampler) 
 
         if config["test_params"]:
-            save_path = os.path.join(WEIGHTS_PATH, config["target"], config["method"], 'TEST2', str(config["file_length"])+'s', config["output_dir"], f'fold_{fold+1}')
+            save_path = os.path.join(WEIGHTS_PATH, config["target"], config["method"], 'TEST3', str(config["file_length"])+'s', config["output_dir"], f'fold_{fold+1}')
         else:
             save_path = os.path.join(WEIGHTS_PATH, config["target"], config["method"], config["feature_type"], str(config["file_length"])+'s', config["output_dir"], f'ALPHA_{alpha}', f'fold_{fold+1}')
         create_directory(save_path)
@@ -390,11 +443,16 @@ def train_cv(config):
     if config["test_params"]:
         save_google_spread_test_params(config, results, best_epochs, config["gspread_offset"])
         print("[TEST PARAMS] Completely save the results on google spread sheet!!")
+    
+    end = time()
+    cost = gmtime(end-start)
+    print(f"It took {cost.tm_mday-1}days, {cost.tm_hour}hours, {cost.tm_min}minutes!")
 
 def train_mse(config):
     """
         Function to train a model which uses Mean Squared Error as a loss function by 5-fold cross validation.
     """
+    start = time()
     # Basic Informations
     print("Train a model which uses only Mean Squared Error!")
     target = config["target"]
@@ -542,20 +600,22 @@ def train_mse(config):
 
                 if epoch==0:
                     best_rmse_val = val_rmse
+                    best_acc = acc
                     results.append(best_rmse_val)
+                    accuracies.append(best_acc)
                     best_epochs.append(epoch+1)
-                    accuracies.append(acc)
                     best_loss_val = val_loss
                     torch.save(model.state_dict(), os.path.join(save_path, f'best_model_{epoch+1}.pt'))
                 else:
                     if val_rmse <= best_rmse_val:
                         best_rmse_val = val_rmse
+                        best_acc = acc
                         results[-1] = best_rmse_val
+                        accuracies[-1] = best_acc
                         best_epochs[-1] = epoch+1
-                        accuracies[-1] = acc
                         best_loss_val = val_loss
                         torch.save(model.state_dict(), os.path.join(save_path, f'best_model_{epoch+1}.pt'))
-                print(f'\t[Validation] LOSS: {val_loss} | RMSE: {val_rmse}\n\t[BEST] LOSS: {best_loss_val} | RMSE: {best_rmse_val}')
+                print(f'\t[Validation] LOSS: {val_loss} | RMSE: {val_rmse} | ACC: {acc}\n\t[BEST] LOSS: {best_loss_val} | RMSE: {best_rmse_val} | ACC: {best_acc}')
             f.write(f'{epoch+1},{train_loss},{train_rmse},{val_loss},{val_rmse}\n')
             del val_loss, val_rmse, train_loss, train_rmse
             torch.cuda.empty_cache()
@@ -563,8 +623,21 @@ def train_mse(config):
         del optimizer, model, LOSS, trainloader, testloader, train_subsampler, test_subsampler
         torch.cuda.empty_cache()
         print(f"\nFold {fold+1}: {best_rmse_val}")
-    print(f"[Results]\nFold 1: {results[0]:.4f}\nFold 2: {results[1]:.4f}\nFold 3: {results[2]:.4f}\nFold 4: {results[3]:.4f}\nFold 5: {results[4]:.4f}")
+    print("\n[Results]")
+    for fold, (result, accuracy) in enumerate(zip(results, accuracies)):
+        print(f"Fold {fold+1}: {result:.4f}, {(accuracy*100):.3f} %")
     print(f"Mean RMSE of 5 folds CV: {np.mean(results):.4f}")
+    print(f"Mean Accuracy of 5 folds CV: {(np.mean(accuracies)*100):.3f} %")
+
+    if config["save_gspread"]:
+        save_google_spread_mse(config, results, accuracies, best_epochs)
+        print("Completely save the results on google spread sheet!!")
+    else:
+        print("Don't save the results on google spread sheet.")
+
+    end = time()
+    cost = gmtime(end-start)
+    print(f"It took {cost.tm_mday-1}days, {cost.tm_hour}hours, {cost.tm_min}minutes!")
 
 def test_cv(config):
     """
@@ -593,16 +666,16 @@ def test_cv(config):
         input_length = int(7680 / (60//config["file_length"]))
         input_image = torch.zeros(1, input_length, 1, 9, 9)
         if config["basemean"]:
-            dataset = DEAP(data_dir=W_BASEMEAN_DATA_PATH, label_path=LABEL_PATH, target=config["target"], file_length=config["file_length"], feature_type="EEG")
+            dataset = DEAP(data_dir=W_BASEMEAN_DATA_PATH, label_path=LABEL_PATH, target=config["target"], file_length=config["file_length"], feature_type="EEG", n_classes=config["n_classes"])
         else:
             dataset = DEAP(data_dir=WO_BASEMEAN_DATA_PATH, label_path=LABEL_PATH, target=config["target"], file_length=config["file_length"], feature_type="EEG")
     elif config["feature_type"]=="DE":
         input_length = int(60 / (60//config["file_length"]))
         input_image = torch.zeros(1, input_length, 1, 9, 9)
         if config["basemean"]:
-            dataset = DEAP(data_dir=DE_W_BASEMEAN_DATA_PATH, label_path=LABEL_PATH, target=config["target"], file_length=config["file_length"], feature_type="DE")
+            dataset = DEAP(data_dir=DE_W_BASEMEAN_DATA_PATH, label_path=LABEL_PATH, target=config["target"], file_length=config["file_length"], feature_type="DE", n_classes=config["n_classes"])
         else:
-            dataset = DEAP(data_dir=DE_WO_BASEMEAN_DATA_PATH, label_path=LABEL_PATH, target=config["target"], file_length=config["file_length"], feature_type="DE")
+            dataset = DEAP(data_dir=DE_WO_BASEMEAN_DATA_PATH, label_path=LABEL_PATH, target=config["target"], file_length=config["file_length"], feature_type="DE", n_classes=config["n_classes"])
 
     # Devide folds
     for fold, (_, test_idx) in enumerate(kfold):

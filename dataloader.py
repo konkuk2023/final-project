@@ -131,8 +131,6 @@ def get_10fold(label_path, file_length=10, method="CSI", subject=None):
         ([idx for idx in range(len(sub)) if sub[idx] not in range(25, 29)], [idx for idx in range(len(sub)) if sub[idx] in range(25, 29)]),
         ([idx for idx in range(len(sub)) if sub[idx] not in range(29, 33)], [idx for idx in range(len(sub)) if sub[idx] in range(29, 33)])]
 
-    
-
     return test_indexes
 
 class DEAP_Full(Dataset):
@@ -184,8 +182,8 @@ class DEAP(Dataset):
 
     def __getitem__(self, idx):
 
-        trial_idx = idx // self.num_division
-        data_idx = (idx % self.num_division) * self.file_length * self.sample_rate
+        trial_idx = idx // self.num_division    # Trial index
+        data_idx = (idx % self.num_division) * self.file_length * self.sample_rate # Time index to select interval
 
         name = self.label.iloc[trial_idx, 0]
         data_path = os.path.join(self.data_dir, name)+'_win_128.pt'
@@ -204,13 +202,11 @@ class DEAP(Dataset):
 
 if __name__=="__main__":
     print("[DATA LOADER]")
-
-    # dataset = DEAP(W_BASEMEAN_DATA_PATH, LABEL_PATH, target="arousal", n_classes=3, file_length=10)
-    # dataloader = torch.utils.data.DataLoader(dataset, batch_size=1) 
     dataset = DEAP(W_BASEMEAN_DATA_PATH, LABEL_PATH, target="arousal", n_classes=9, feature_type="EEG", file_length=1)
     # dataloader = torch.utils.data.DataLoader(dataset, batch_size=1) 
 
     # # for name, eeg, score, label_cls in dataloader:
+    
     # #     print(f'-----{name}')
     # #     print(">>", eeg.shape)
     # #     print(">>", score)

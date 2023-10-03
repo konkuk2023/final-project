@@ -8,7 +8,7 @@ OUTPUT_DIR=$BATCH"_"$LR
 
 python ./main.py \
     --test_params True \
-    --method CSI \
+    --method CSV \
     --gspread_offset ${OFFSET} \
     --mode Train \
     --epochs 200 \
@@ -26,7 +26,7 @@ python ./main.py \
     --file_length ${LEN} \
     --n_classes 9 \
     --device ${DEVICE} \
-    --formula Expectation \
+    --formula Bernoulli \
     --weight None \
     --output_dir ${OUTPUT_DIR} \
     --test_weights "" 

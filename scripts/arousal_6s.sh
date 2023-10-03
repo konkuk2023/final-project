@@ -13,7 +13,7 @@ python ./main.py \
     --batch_size 256 \
     --dataset DEAP \
     --optimizer Adam \
-    --learning_rate 1e-5 \
+    --learning_rate 1e-4 \
     --weight_decay 1e-4 \
     --beta1 0.9 \
     --beta2 0.999 \
@@ -21,7 +21,7 @@ python ./main.py \
     --basemean ${BASEMEAN} \
     --alpha 1 \
     --feature DE \
-    --file_length 10 \
+    --file_length 6 \
     --n_classes ${N_CLASSES} \
     --device ${DEVICE} \
     --formula ${FORMULA} \

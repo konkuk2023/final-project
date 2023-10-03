@@ -10,7 +10,7 @@ python ./main.py \
     --method CSV \
     --save_gspread True \
     --epochs 500 \
-    --batch_size 128 \
+    --batch_size 32 \
     --dataset DEAP \
     --optimizer Adam \
     --learning_rate 1e-5 \

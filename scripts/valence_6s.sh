@@ -9,11 +9,11 @@ python ./main.py \
     --mode Train \
     --method CSV \
     --save_gspread True \
-    --epochs 200 \
-    --batch_size 256 \
+    --epochs 500 \
+    --batch_size 128 \
     --dataset DEAP \
     --optimizer Adam \
-    --learning_rate 1e-5 \
+    --learning_rate 1e-3 \
     --weight_decay 1e-4 \
     --beta1 0.9 \
     --beta2 0.999 \

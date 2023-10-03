@@ -1,13 +1,10 @@
 python ./main.py \
     --mode Test \
+    --method CSV \
     --folds 5 \
     --test_params True \
-    --epochs 0 \
     --batch_size 1 \
     --dataset DEAP \
-    --optimizer Adam \
-    --learning_rate 1e-5 \
-    --weight_decay 1e-4 \
     --beta1 0.9 \
     --beta2 0.999 \
     --target valence \
@@ -16,7 +13,7 @@ python ./main.py \
     --feature DE \
     --file_length 60 \
     --n_classes 9 \
-    --device cpu \
+    --device cuda:1 \
     --formula Expectation \
     --weight None \
     --output_dir 128_1e-5 \
