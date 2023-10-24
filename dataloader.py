@@ -90,7 +90,7 @@ def get_10fold(label_path, file_length=10, method="CSI", subject=None):
         ([idx for idx, s in zip(range(len(trial)), sub) if trial[idx] not in range(37, 41) and s==subject], [idx for idx, s in zip(range(len(trial)), sub) if trial[idx] in range(37, 41) and s==subject])]
 
     elif method=="CSV":
-        print("Cross-Subject(Video unit) Experiment(5-fold) will be conducted!!")
+        print("Cross-Subject(Video unit) Experiment(10-fold) will be conducted!!")
         test_indexes = [
         ([idx for idx in range(len(trial)) if trial[idx] not in range(1, 5)], [idx for idx in range(len(trial)) if trial[idx] in range(1, 5)]),
         ([idx for idx in range(len(trial)) if trial[idx] not in range(5, 9)], [idx for idx in range(len(trial)) if trial[idx] in range(5, 9)]),
@@ -104,7 +104,7 @@ def get_10fold(label_path, file_length=10, method="CSI", subject=None):
         ([idx for idx in range(len(trial)) if trial[idx] not in range(37, 41)], [idx for idx in range(len(trial)) if trial[idx] in range(37, 41)])]
     
     elif method=="CSI":
-        print("Cross-Subject(Interval unit) Experiment(5-fold) will be conducted!!")
+        print("Cross-Subject(Interval unit) Experiment(10-fold) will be conducted!!")
         test_indexes = [
         ([idx for idx in range(len(trial)) if idx % 10 != 0], [idx for idx in range(len(trial)) if idx % 10 == 0]),
         ([idx for idx in range(len(trial)) if idx % 10 != 1], [idx for idx in range(len(trial)) if idx % 10 == 1]),
@@ -202,30 +202,114 @@ class DEAP(Dataset):
 
 if __name__=="__main__":
     print("[DATA LOADER]")
-    dataset = DEAP(W_BASEMEAN_DATA_PATH, LABEL_PATH, target="arousal", n_classes=9, feature_type="EEG", file_length=1)
-    # dataloader = torch.utils.data.DataLoader(dataset, batch_size=1) 
 
-    # # for name, eeg, score, label_cls in dataloader:
+    """
+        [1s length]
+            - #. of Datas: 1280 x 60 = 76800
+        
+        [6s length]
+            - #. of Datas: 1280 x 10 = 12800
     
-    # #     print(f'-----{name}')
-    # #     print(">>", eeg.shape)
-    # #     print(">>", score)
-    # #     print(">>", label_cls)
-    
-    # print(len(dataloader))
-    # print(dataloader.__len__)
+    """
+    FOLDS = 10
+    METHOD = "CSI"
+    LENGTH = 6
 
-    samples = get_10fold(label_path=LABEL_PATH, file_length=60, method="CSI", subject=None)
-    for train_idx, test_idx in tqdm(samples):
+    SUBJECT = None
+    FEATURE = "DE"
+    TARGET = "valence"
+
+    NUM_DATA = int(1280 * (60/LENGTH))
+
+    print(f'- FILE LENGTH: {LENGTH}s')
+    print(f'- #. of DATAs: {NUM_DATA}\n')
+
+    full_set = set(range(NUM_DATA)) # Full Set
+    empty_set = set()               # Empty Set
+
+    dataset = DEAP(W_BASEMEAN_DATA_PATH, LABEL_PATH, target=TARGET, n_classes=9, feature_type=FEATURE, file_length=LENGTH)
+    if FOLDS == 5:
+        samples = get_5fold(label_path=LABEL_PATH, file_length=LENGTH, method=METHOD, subject=SUBJECT)
+    else:
+        samples = get_10fold(label_path=LABEL_PATH, file_length=LENGTH, method=METHOD, subject=SUBJECT)
+
+    for fold, (train_idx, test_idx) in tqdm(enumerate(samples)):
+        print(f'\n>> Fold {fold+1}')
+
+        trainset = set(train_idx)
+        testset = set(test_idx)
+
+        train_subjects = []
+        test_subjects = []
+
+        train_videos = []
+        test_videos = []
+
+        train_splits = []
+        test_splits = []
+
+        # Test 1. Intersection Test
+        if (trainset & testset) == empty_set:
+            print("\t++ TEST 1) Success: The intersection is an Empty Set")
+        else:
+            print("\t++ TEST 1) Failed: The intersection is not an Empty Set")
+        
+        # Test 2. Union Test
+        if (trainset | testset) == full_set:
+            print("\t++ TEST 2) Success: The union is the Full Set")
+        else:
+            print("\t++ TEST 2) Failed: The union is not the Full Set")
+        
         train_subsampler = torch.utils.data.SubsetRandomSampler(train_idx)
         test_subsampler = torch.utils.data.SubsetRandomSampler(test_idx)
-
-        print("---------------------")
-        print(train_idx)
-        print(test_idx)
-
         trainloader = torch.utils.data.DataLoader(dataset, num_workers=8, batch_size=1, sampler=train_subsampler) 
-        testloader = torch.utils.data.DataLoader(dataset, num_workers=4, batch_size=1, sampler=test_subsampler) 
+        testloader = torch.utils.data.DataLoader(dataset, num_workers=8, batch_size=1, sampler=test_subsampler) 
 
-        print(len(trainloader))
-        print(len(testloader))
+        # Test 3 & 4
+        for name, _, _, _ in tqdm(trainloader, desc="@TrainSet Checking", leave=False):
+            subject, video = name[0].split("_")
+            
+            train_subjects.append(subject)
+            train_subjects = list(set(train_subjects)) # Eliminate Duplication
+
+            train_videos.append(video)
+            train_videos = list(set(train_videos)) # Eliminate Duplication
+
+        for name, _, _, _ in tqdm(testloader, desc="@TestSet Checking", leave=False):
+            subject, video = name[0].split("_")
+            
+            test_subjects.append(subject)
+            test_subjects = list(set(test_subjects)) # Eliminate Duplication
+
+            test_videos.append(video)
+            test_videos = list(set(test_videos)) # Eliminate Duplication
+
+        # Test 3. # of Subjects
+        print(f'\n\t++ TEST 3-1) #. of Subjects in the Train Set: {len(train_subjects)}')
+        print(f'\t++ TEST 3-2) #. of Subjects in the Test Set: {len(test_subjects)}')
+        print(f'\t++ TEST 3-3) Intersection: {len(set(train_subjects) & set(test_subjects))}')
+        print(f'\t++ TEST 3-4) Union: {len(set(train_subjects) | set(test_subjects))}')
+
+        # Test 4. # of Videos
+        print(f'\n\t++ TEST 4-1) #. of Videos in the Train Set: {len(train_videos)}')
+        print(f'\t++ TEST 4-2) #. of Videos in the Test Set: {len(test_videos)}')
+        print(f'\t++ TEST 4-3) Intersection: {len(set(train_videos) & set(test_videos))}')
+        print(f'\t++ TEST 4-4) Union: {len(set(train_videos) | set(test_videos))}')
+
+        # Test 5. # of Splits
+        for idx in tqdm(train_idx, desc="@TrainSet Checking", leave=False):
+            internal_subject = idx % int(60/LENGTH)
+
+            train_splits.append(internal_subject)
+            train_splits = list(set(train_splits))
+
+        for idx in tqdm(test_idx, desc="@TestSet Checking", leave=False):
+            internal_subject = idx % int(60/LENGTH)
+            
+            test_splits.append(internal_subject)
+            test_splits = list(set(test_splits))
+
+        print(f'\n\t++ TEST 5-1) #. of Splits in the Train Set: {len(train_splits)}')
+        print(f'\t++ TEST 5-2) #. of Splits in the Test Set: {len(test_splits)}')
+        print(f'\t++ TEST 5-3) Intersection: {len(set(train_splits) & set(test_splits))}')
+        print(f'\t++ TEST 5-4) Union: {len(set(train_splits) | set(test_splits))}')

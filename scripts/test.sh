@@ -1,8 +1,8 @@
 python ./main.py \
     --mode Test \
-    --method CSV \
+    --method CSI \
     --folds 5 \
-    --test_params True \
+    --test_params False \
     --batch_size 1 \
     --dataset DEAP \
     --beta1 0.9 \
@@ -11,10 +11,10 @@ python ./main.py \
     --basemean True \
     --alpha 1 \
     --feature DE \
-    --file_length 60 \
+    --file_length 6 \
     --n_classes 9 \
     --device cuda:1 \
-    --formula Expectation \
-    --weight None \
-    --output_dir 128_1e-5 \
-    --test_weights "36 46 68 199 197" 
+    --formula Bernoulli \
+    --weight Square \
+    --output_dir Bernoulli_Square \
+    --test_weights "30 51 59 59 38"

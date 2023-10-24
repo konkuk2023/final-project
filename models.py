@@ -97,8 +97,16 @@ class EmoticonNet(nn.Module):
 if __name__=="__main__":
     print("[MODELS]")
 
+    """
+        Check the number of Parameters
+    """
     def count_parameters(model):
         return sum(p.numel() for p in model.parameters() if p.requires_grad)*8 / 1e+9
     
     model = EmoticonNet()
     print(count_parameters(model), "GB")
+
+    """
+        Check the output of the Model
+    """
+    

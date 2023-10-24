@@ -30,7 +30,7 @@ class Calculator():
             Expectation Formula is the base formula for calculating MMSE score.
             You can choose whether to apply Bernoulli Penalty on the calculation.
             - Expectation Formula
-            - Bernoulli Formula: Apply Bernoulli Penalty on Expectation Formula
+            - Bernoulli Penalized Formula: Apply Bernoulli Penalty on the Expectation Formula
     """
     def __init__(self, cal_type, penalty=1, n_classes=9):
         self.cal_type = cal_type
@@ -44,7 +44,7 @@ class Calculator():
     def expectation(self, probs):
         return torch.sum(torch.tensor(range(1,10,self.interval_length)).to(probs.device)*probs, 1)
     def bernoulli(self, probs):
-        return torch.sum(torch.tensor(range(1,10,self.interval_length)).to(probs.device)*probs - self.penalty*(1-probs)*probs, 1)
+        return torch.clip(torch.sum(torch.tensor(range(1,10,self.interval_length)).to(probs.device)*probs - self.penalty*(1-probs)*probs, 1), min=1, max=9)
     
 def optimizer_to(optim, device):
     """
@@ -67,7 +67,7 @@ def optimizer_to(optim, device):
 def str2bool(v):
     """
         Reference: https://stackoverflow.com/questions/15008758/parsing-boolean-values-with-argparse
-        Argparse gets all of the input as a string type or a numeruc type.
+        Argparse gets all of the input as a string type or a numeric type.
         So you have to change the string type to boolean type if you need.
     """
     if isinstance(v, bool):
@@ -88,6 +88,12 @@ def create_directory(directory):
             os.makedirs(directory)
     except OSError:
         print("Error: Failed to create the directory.")
+
+def save_predictions_to_csv(config, predictions, filename):
+    """
+        Save the predictions from the trained model.
+    """
+    torch.save(torch.tensor(predictions), os.path.join("/workspace/G_Project/weights", filename))
 
 def save_google_spread(config, results, accuracies, epochs):
     """
@@ -277,8 +283,8 @@ def train_cv(config):
         train_subsampler = torch.utils.data.SubsetRandomSampler(train_idx)
         test_subsampler = torch.utils.data.SubsetRandomSampler(test_idx)
 
-        trainloader = torch.utils.data.DataLoader(dataset, num_workers=2, batch_size=config["batch"], sampler=train_subsampler) 
-        testloader = torch.utils.data.DataLoader(dataset, num_workers=2, batch_size=1, sampler=test_subsampler) 
+        trainloader = torch.utils.data.DataLoader(dataset, num_workers=8, batch_size=config["batch"], sampler=train_subsampler) 
+        testloader = torch.utils.data.DataLoader(dataset, num_workers=8, batch_size=1, sampler=test_subsampler) 
 
         if config["test_params"]:
             save_path = os.path.join(WEIGHTS_PATH, config["target"], config["method"], 'TEST3', str(config["file_length"])+'s', config["output_dir"], f'fold_{fold+1}')
@@ -318,7 +324,7 @@ def train_cv(config):
                 num_batch = eeg.shape[0]
                 num_data += num_batch
 
-                true_points = torch.round(score).type("torch.FloatTensor").to(config["device"])
+                true_points = score.to(config["device"])
                 pred_probs = model(eeg.to(config["device"]))
                 pred_points = cal.calculate(pred_probs)
                 true_class = label_cls.type("torch.LongTensor").to(config["device"])
@@ -367,7 +373,7 @@ def train_cv(config):
 
                 for _, eeg, score, label_cls in tqdm(testloader, desc=f"Epoch {epoch+1} / VALIDATE", ncols=100, ascii=" =", leave=False):
 
-                    true_points = torch.round(score).type("torch.FloatTensor").to(config["device"])
+                    true_points = score.to(config["device"])
                     pred_probs = model(eeg.to(config["device"]))
                     pred_points = cal.calculate(pred_probs)
                     true_class = label_cls.type("torch.LongTensor").to(config["device"])
@@ -421,13 +427,18 @@ def train_cv(config):
                         best_loss_val = val_loss
                         torch.save(model.state_dict(), os.path.join(save_path, f'best_model_{epoch+1}.pt'))
                 print(f'\t[Validation] LOSS: {val_loss} | MSE: {val_mse} | CE: {val_ce} | RMSE: {val_rmse} | ACC: {acc}\n\t[BEST] LOSS: {best_loss_val} | MSE: {best_mse_val} | CE: {best_ce_val} | RMSE: {best_rmse_val} | ACC: {best_acc}')
+            
             f.write(f'{epoch+1},{train_loss},{train_mse},{train_ce},{train_rmse},{val_loss},{val_mse},{val_ce},{val_rmse},{acc}\n')
+            
             del val_mse, val_ce, val_loss, val_rmse, train_mse, train_ce, train_loss, train_rmse, num_test_data, acc
             torch.cuda.empty_cache()
+
         f.close()   
         del optimizer, model, LOSS, trainloader, testloader, train_subsampler, test_subsampler
         torch.cuda.empty_cache()
+
         print(f"\nFold {fold+1}: {best_rmse_val}")
+
     print("\n[Results]")
     for fold, (result, accuracy) in enumerate(zip(results, accuracies)):
         print(f"Fold {fold+1}: {result:.4f}, {(accuracy*100):.3f} %")
@@ -527,7 +538,7 @@ def train_mse(config):
                 num_batch = eeg.shape[0]
                 num_data += num_batch
 
-                true_points = torch.round(score).type("torch.FloatTensor").to(config["device"])
+                true_points = score.to(config["device"])
                 pred_probs = model(eeg.to(config["device"]))
                 pred_points = 8 * pred_probs + 1
                 # true_class = label_cls.type("torch.LongTensor").to(config["device"])
@@ -570,8 +581,7 @@ def train_mse(config):
 
                 for _, eeg, score, label_cls in tqdm(testloader, desc=f"Epoch {epoch+1} / VALIDATE", ncols=100, ascii=" =", leave=False):
 
-
-                    true_points = torch.round(score).type("torch.FloatTensor").to(config["device"])
+                    true_points = score.to(config["device"])
                     pred_probs = model(eeg.to(config["device"]))
                     pred_points = 8 * pred_probs + 1
                     
@@ -616,13 +626,18 @@ def train_mse(config):
                         best_loss_val = val_loss
                         torch.save(model.state_dict(), os.path.join(save_path, f'best_model_{epoch+1}.pt'))
                 print(f'\t[Validation] LOSS: {val_loss} | RMSE: {val_rmse} | ACC: {acc}\n\t[BEST] LOSS: {best_loss_val} | RMSE: {best_rmse_val} | ACC: {best_acc}')
+            
             f.write(f'{epoch+1},{train_loss},{train_rmse},{val_loss},{val_rmse}\n')
+            
             del val_loss, val_rmse, train_loss, train_rmse
             torch.cuda.empty_cache()
+
         f.close()   
         del optimizer, model, LOSS, trainloader, testloader, train_subsampler, test_subsampler
         torch.cuda.empty_cache()
+
         print(f"\nFold {fold+1}: {best_rmse_val}")
+
     print("\n[Results]")
     for fold, (result, accuracy) in enumerate(zip(results, accuracies)):
         print(f"Fold {fold+1}: {result:.4f}, {(accuracy*100):.3f} %")
@@ -654,6 +669,12 @@ def test_cv(config):
 
     results = []
     accuracies = []
+    three_accuracies = []
+    up_thr = 19 / 3
+    lw_thr = 11 / 3
+
+    predictions = []
+    groundtruths = []
     weight_epochs = config["test_weights"].split(" ")
     
     if config["folds"]==5:
@@ -684,6 +705,7 @@ def test_cv(config):
         
         num_test_data = len(testloader)
         acc = 0
+        three_acc = 0
 
         print(f'\nTest for fold {fold+1}')
 
@@ -708,15 +730,36 @@ def test_cv(config):
 
             for _, eeg, score, label_cls in tqdm(testloader, desc=f"TEST", ncols=100, ascii=" =", leave=False):
 
-                true_points = torch.round(score).type("torch.FloatTensor").to(config["device"])
+                true_points = score.to(config["device"])
                 pred_probs = model(eeg.to(config["device"]))
                 pred_points = cal.calculate(pred_probs)
+                predictions.append(pred_points.squeeze())
+                groundtruths.append(true_points.squeeze())
                 true_class = label_cls.type("torch.LongTensor").to(config["device"])
 
                 pred_cls = 1 if pred_points >= 5 else 0
                 true_cls = 1 if true_points >= 5 else 0
                 if pred_cls==true_cls:
                     acc+=1
+                
+                # 3-classes
+                if pred_points >= up_thr:
+                    pred_cls_three = 2
+                elif pred_points >= lw_thr:
+                    pred_cls_three = 1
+                else:
+                    pred_cls_three = 0
+
+                if true_points >= up_thr:
+                    true_cls_three = 2
+                elif true_points >= lw_thr:
+                    true_cls_three = 1
+                else:
+                    true_cls_three = 0
+                
+                if pred_cls_three==true_cls_three:
+                    three_acc+=1
+
 
                 del score, eeg, label_cls
                 torch.cuda.empty_cache()
@@ -738,11 +781,13 @@ def test_cv(config):
             test_loss /= num_test_data
             test_rmse = test_mse ** (1/2)
             acc /= num_test_data
+            three_acc /= num_test_data
 
             results.append(test_rmse)
             accuracies.append(acc)
+            three_accuracies.append(three_acc)
 
-            print(f'\t[Test] LOSS: {test_loss} | MSE: {test_mse} | CE: {test_ce} | RMSE: {test_rmse} | Accuracy: {acc}')
+            print(f'\t[Test] LOSS: {test_loss} | MSE: {test_mse} | CE: {test_ce} | RMSE: {test_rmse} | Accuracy: {acc} | 3-classes: {three_acc}')
 
         del test_mse, test_ce, test_loss, test_rmse
         torch.cuda.empty_cache()
@@ -750,8 +795,13 @@ def test_cv(config):
     print("\n[Results]")
     for fold, (result, accuracy) in enumerate(zip(results, accuracies)):
         print(f"Fold {fold+1}: {result:.4f}, {(accuracy*100):.3f} %")
+
     print(f"Mean RMSE of 5 folds CV: {np.mean(results):.4f}")
-    print(f"Mean Accuracy of 5 folds CV: {(np.mean(accuracies)*100):.3f} %")
+    print(f"Mean Accuracy of 5 folds CV(Binary): {(np.mean(accuracies)*100):.3f} %")
+    print(f"Mean Accuracy of 5 folds CV(3-classes): {(np.mean(three_accuracies)*100):.3f} %")
+
+    save_predictions_to_csv(config, predictions, "BER_SQR_"+str(config["file_length"])+"s_"+config["target"]+".pt")
+    save_predictions_to_csv(config, groundtruths, "GT_BER_SQR_"+str(config["file_length"])+"s_"+config["target"]+".pt")
 
 def test_mse(config):
     """
@@ -765,7 +815,12 @@ def test_mse(config):
 
     results = []
     accuracies = []
-    weight_epochs = config["test_weight"].split(" ")
+    three_accuracies = []
+    up_thr = 19 / 3
+    lw_thr = 11 / 3
+
+    predictions = []
+    weight_epochs = config["test_weights"].split(" ")
     
     if config["folds"]==5:
         kfold = get_5fold(LABEL_PATH, file_length=config["file_length"], method=config["method"], subject=config["subject"])
@@ -795,19 +850,17 @@ def test_mse(config):
 
         num_test_data = len(testloader)
         acc = 0
+        three_acc = 0
 
-        save_path = os.path.join(WEIGHTS_PATH, config["target"], config["method"], config["feature_type"], str(config["file_length"])+'s', config["output_dir"], f'fold_{fold+1}')
-        create_directory(save_path)
-
-        f = open(os.path.join(save_path, 'output.csv'), 'w')
-        f.write('epoch,MSE,RMSE,v_MSE,v_RMSE\n')
-
-        print(f'\nTraining for fold {fold+1}')
-
+        print(f'\nTest for fold {fold+1}')
+        
         LOSS = nn.MSELoss() # Mean Squared Error Loss
         model = EmoticonNet(device=config["device"], n_classes=config["n_classes"], input_image=input_image, formula=config["formula"])
         ep = weight_epochs[fold]
-        model.load_state_dict(torch.load(os.path.join(WEIGHTS_PATH, config["output_dir"], f'fold_{fold+1}', f'best_model_{ep}.pt')))
+        if config["test_params"]:
+            model.load_state_dict(torch.load(os.path.join(WEIGHTS_PATH, config["target"], config["method"], 'TEST2', str(config["file_length"])+'s', config["output_dir"], f'fold_{fold+1}', f'best_model_{ep}.pt')))
+        else:
+            model.load_state_dict(torch.load(os.path.join(WEIGHTS_PATH, config["target"], config["method"], config["feature_type"], str(config["file_length"])+'s', config["output_dir"], f'fold_{fold+1}', f'best_model_{ep}.pt')))
 
         print(f"[INFO] Target:{target}||Loss:Mean Squared Error||BaseMean:{basemean}||Fold:{fold+1}")
         torch.cuda.empty_cache()
@@ -817,16 +870,35 @@ def test_mse(config):
 
             test_loss = 0
 
-            for _, eeg, score, label_cls in tqdm(testloader, desc=f"Epoch {epoch+1} / VALIDATE", ncols=100, ascii=" =", leave=False):
+            for _, eeg, score, label_cls in tqdm(testloader, desc=f"TEST", ncols=100, ascii=" =", leave=False):
 
-                true_points = torch.round(score).type("torch.FloatTensor").to(config["device"])
+                true_points = score.to(config["device"])
                 pred_probs = model(eeg.to(config["device"]))
                 pred_points = 8 * pred_probs + 1
+                predictions.append(pred_points.squeeze())
 
                 pred_cls = 1 if pred_points >= 5 else 0
                 true_cls = 1 if true_points >= 5 else 0
                 if pred_cls==true_cls:
                     acc+=1
+                
+                # 3-classes
+                if pred_points >= up_thr:
+                    pred_cls_three = 2
+                elif pred_points >= lw_thr:
+                    pred_cls_three = 1
+                else:
+                    pred_cls_three = 0
+
+                if true_points >= up_thr:
+                    true_cls_three = 2
+                elif true_points >= lw_thr:
+                    true_cls_three = 1
+                else:
+                    true_cls_three = 0
+                
+                if pred_cls_three==true_cls_three:
+                    three_acc+=1
 
                 del score, eeg, label_cls
                 torch.cuda.empty_cache()
@@ -839,17 +911,19 @@ def test_mse(config):
                 
                 test_loss += loss.item()
 
-                del loss, num_batch
+                del loss
                 torch.cuda.empty_cache()
             
             test_loss /= num_test_data
             test_rmse = test_loss ** (1/2)
             acc /= num_test_data
+            three_acc /= num_test_data
 
             results.append(test_rmse)
             accuracies.append(acc)
+            three_accuracies.append(three_acc)
 
-            print(f'\t[Test] LOSS: {test_loss} | RMSE: {test_rmse} | Accuracy: {acc}')
+            print(f'\t[Test] LOSS: {test_loss} | RMSE: {test_rmse} | Accuracy: {acc} | 3-classes: {three_acc}')
 
         del test_loss, test_rmse
         torch.cuda.empty_cache()
@@ -857,8 +931,12 @@ def test_mse(config):
     print("\n[Results]")
     for fold, (result, accuracy) in enumerate(zip(results, accuracies)):
         print(f"Fold {fold+1}: {result:.4f}, {(accuracy*100):.3f} %")
+        
     print(f"Mean RMSE of 5 folds CV: {np.mean(results):.4f}")
     print(f"Mean Accuracy of 5 folds CV: {(np.mean(accuracies)*100):.3f} %")
+    print(f"Mean Accuracy of 5 folds CV(3-classes): {(np.mean(three_accuracies)*100):.3f} %")
+
+    # save_predictions_to_csv(config, predictions, "MSE_"+str(config["file_length"])+"s_"+config["target"]+".pt")
 
 if __name__=="__main__":
 

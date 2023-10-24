@@ -3,14 +3,15 @@ DEVICE=$2
 N_CLASSES=$3
 FORMULA=$4
 WEIGHT=$5
-OUTPUT_DIR=$FORMULA"_"$WEIGHT
+OUTPUT_DIR=$FORMULA"_10_"$WEIGHT
 
 python ./main.py \
     --mode Train \
-    --method CSV \
-    --save_gspread True \
-    --epochs 500 \
-    --batch_size 256 \
+    --method CSI \
+    --folds 10 \
+    --save_gspread False \
+    --epochs 100 \
+    --batch_size 64 \
     --dataset DEAP \
     --optimizer Adam \
     --learning_rate 1e-4 \

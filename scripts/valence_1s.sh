@@ -3,13 +3,14 @@ DEVICE=$2
 N_CLASSES=$3
 FORMULA=$4
 WEIGHT=$5
-OUTPUT_DIR=$FORMULA"_"$WEIGHT
+OUTPUT_DIR=$FORMULA"_unseen_"$WEIGHT
 
 python ./main.py \
     --mode Train \
     --method CSI \
-    --save_gspread True \
-    --epochs 500 \
+    --folds 5 \
+    --save_gspread False \
+    --epochs 300 \
     --batch_size 128 \
     --dataset DEAP \
     --optimizer Adam \
